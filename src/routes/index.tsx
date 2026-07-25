@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 export const Route = createFileRoute("/")({
@@ -61,6 +61,13 @@ function Home() {
             Analyze
           </button>
         </form>
+
+        <Link
+          to="/test"
+          className="mt-6 text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        >
+          Run test mode →
+        </Link>
 
         <div className="mt-16 grid w-full max-w-2xl grid-cols-1 gap-6 sm:grid-cols-2">
           <div className="rounded-lg border border-border bg-card p-5 text-card-foreground">
