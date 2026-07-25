@@ -89,8 +89,8 @@ function ScanPage() {
     retry: false,
   });
 
-  const vibeSignals = data?.signals.filter((s) => s.category === "vibe") ?? [];
-  const aiSignals = data?.signals.filter((s) => s.category === "ai") ?? [];
+  const vibeSignals = data?.signals.filter((s: Signal) => s.category === "vibe") ?? [];
+  const aiSignals = data?.signals.filter((s: Signal) => s.category === "ai") ?? [];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
