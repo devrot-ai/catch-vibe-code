@@ -15,7 +15,7 @@ export interface AnalysisResult {
   vibeScore: number;
   aiScore: number;
   signals: Signal[];
-  meta?: Record<string, unknown>;
+  meta?: { description?: string | null; stars?: number; branch?: string };
   error?: string;
 }
 
