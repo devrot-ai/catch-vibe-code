@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueries } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { analyzeUrl } from "../lib/analyze.functions";
 import { TEST_SAMPLES, passes, scoreBucket } from "../lib/test-samples";
 import type { AnalysisResult, Signal } from "../lib/detectors/signals";
@@ -90,10 +90,48 @@ function Breakdown({
   );
 }
 
+function isLowConfidence(score: number, signalCount: number): boolean {
+  // Sparse evidence coverage.
+  if (signalCount <= 2) return true;
+  // Within 5 points of a bucket boundary (35 or 65).
+  const distance = Math.min(Math.abs(score - 35), Math.abs(score - 65));
+  return distance <= 5;
+}
+
+export type FilterKey = "failedVibe" | "failedAi" | "lowConfidence";
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-card text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function TestPage() {
   const analyze = useServerFn(analyzeUrl);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-
+  const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
+    failedVibe: false,
+    failedAi: false,
+    lowConfidence: false,
+  });
 
   const queries = useQueries({
     queries: TEST_SAMPLES.map((s) => ({
@@ -104,7 +142,17 @@ function TestPage() {
     })),
   });
 
-  const done = queries.filter((q) => q.data && !q.data.error).length;
+  const rows = useMemo(
+    () =>
+      TEST_SAMPLES.map((s, i) => ({
+        sample: s,
+        query: queries[i],
+        index: i,
+      })),
+    [queries],
+  );
+
+  const allDone = queries.filter((q) => q.data && !q.data.error).length;
   let vibePass = 0;
   let aiPass = 0;
   let totalDone = 0;
@@ -116,6 +164,35 @@ function TestPage() {
     if (passes(d.aiScore, TEST_SAMPLES[i].expectAi)) aiPass++;
   });
 
+  const filteredRows = rows.filter(({ sample, query }) => {
+    const d = query.data;
+    if (!d || d.error) return true; // Keep loading/error rows visible.
+    const vibeOk = passes(d.vibeScore, sample.expectVibe);
+    const aiOk = passes(d.aiScore, sample.expectAi);
+    const lowConf = isLowConfidence(d.vibeScore, d.signals.length) || isLowConfidence(d.aiScore, d.signals.length);
+
+    if (!filters.failedVibe && !filters.failedAi && !filters.lowConfidence) return true;
+
+    const matches =
+      (filters.failedVibe && !vibeOk) ||
+      (filters.failedAi && !aiOk) ||
+      (filters.lowConfidence && lowConf);
+    return matches;
+  });
+
+  let filteredVibePass = 0;
+  let filteredAiPass = 0;
+  let filteredDone = 0;
+  filteredRows.forEach(({ sample, query }) => {
+    const d = query.data;
+    if (!d || d.error) return;
+    filteredDone++;
+    if (passes(d.vibeScore, sample.expectVibe)) filteredVibePass++;
+    if (passes(d.aiScore, sample.expectAi)) filteredAiPass++;
+  });
+
+  const anyFilter = filters.failedVibe || filters.failedAi || filters.lowConfidence;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-5xl px-6 py-10">
@@ -124,7 +201,7 @@ function TestPage() {
             ← Home
           </Link>
           <div className="text-xs text-muted-foreground">
-            {done}/{TEST_SAMPLES.length} scans complete
+            {allDone}/{TEST_SAMPLES.length} scans complete
           </div>
         </div>
 
@@ -155,7 +232,48 @@ function TestPage() {
           </div>
         </div>
 
-        <div className="mt-8 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterChip
+              active={filters.failedVibe}
+              onClick={() => setFilters((f) => ({ ...f, failedVibe: !f.failedVibe }))}
+            >
+              Failed Vibe
+            </FilterChip>
+            <FilterChip
+              active={filters.failedAi}
+              onClick={() => setFilters((f) => ({ ...f, failedAi: !f.failedAi }))}
+            >
+              Failed AI
+            </FilterChip>
+            <FilterChip
+              active={filters.lowConfidence}
+              onClick={() => setFilters((f) => ({ ...f, lowConfidence: !f.lowConfidence }))}
+            >
+              Low confidence / evidence
+            </FilterChip>
+            {anyFilter && (
+              <button
+                type="button"
+                onClick={() => setFilters({ failedVibe: false, failedAi: false, lowConfidence: false })}
+                className="text-xs text-muted-foreground underline hover:text-foreground"
+              >
+                clear
+              </button>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Showing {filteredRows.length} of {rows.length} repos
+            {anyFilter && filteredDone > 0 && (
+              <span className="ml-2 text-foreground">
+                filtered pass rate: {" "}
+                {Math.round(((filteredVibePass + filteredAiPass) / (filteredDone * 2)) * 100)}%
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
@@ -166,24 +284,23 @@ function TestPage() {
               </tr>
             </thead>
             <tbody>
-              {TEST_SAMPLES.map((s, i) => {
-                const q = queries[i];
-                const d = q.data;
-                const loading = q.isFetching;
-                const err = q.error as Error | null;
-                const vibeOk = d && !d.error ? passes(d.vibeScore, s.expectVibe) : null;
-                const aiOk = d && !d.error ? passes(d.aiScore, s.expectAi) : null;
-                const open = !!expanded[s.url];
+              {filteredRows.map(({ sample, query, index }) => {
+                const d = query.data;
+                const loading = query.isFetching;
+                const err = query.error as Error | null;
+                const vibeOk = d && !d.error ? passes(d.vibeScore, sample.expectVibe) : null;
+                const aiOk = d && !d.error ? passes(d.aiScore, sample.expectAi) : null;
+                const open = !!expanded[sample.url];
                 return (
-                  <Fragment key={s.url}>
+                  <Fragment key={sample.url}>
                   <tr className="border-t border-border align-top">
                     <td className="px-4 py-3">
-                      <div className="font-medium">{s.label}</div>
-                      <div className="text-xs text-muted-foreground">{s.note}</div>
+                      <div className="font-medium">{sample.label}</div>
+                      <div className="text-xs text-muted-foreground">{sample.note}</div>
                       <div className="mt-1 flex gap-3">
                         <Link
                           to="/scan"
-                          search={{ url: s.url }}
+                          search={{ url: sample.url }}
                           className="inline-block text-xs text-muted-foreground underline hover:text-foreground"
                         >
                           open scan →
@@ -191,7 +308,7 @@ function TestPage() {
                         {d && !d.error && (
                           <button
                             type="button"
-                            onClick={() => setExpanded((e) => ({ ...e, [s.url]: !e[s.url] }))}
+                            onClick={() => setExpanded((e) => ({ ...e, [sample.url]: !e[sample.url] }))}
                             className="text-xs text-muted-foreground underline hover:text-foreground"
                           >
                             {open ? "hide breakdown" : `why? (${d.signals.length} signals)`}
@@ -211,7 +328,7 @@ function TestPage() {
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
-                      <div className="text-xs text-muted-foreground">expect: {s.expectVibe}</div>
+                      <div className="text-xs text-muted-foreground">expect: {sample.expectVibe}</div>
                     </td>
                     <td className="px-4 py-3">
                       {d && !d.error ? (
@@ -225,7 +342,7 @@ function TestPage() {
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
-                      <div className="text-xs text-muted-foreground">expect: {s.expectAi}</div>
+                      <div className="text-xs text-muted-foreground">expect: {sample.expectAi}</div>
                     </td>
                     <td className="px-4 py-3">
                       {loading && <span className="text-muted-foreground">scanning…</span>}
@@ -237,20 +354,20 @@ function TestPage() {
                     </td>
                   </tr>
                   {open && d && !d.error && (
-                    <tr key={`${s.url}-detail`} className="border-t border-border bg-muted/20">
+                    <tr key={`${sample.url}-detail`} className="border-t border-border bg-muted/20">
                       <td colSpan={4} className="px-4 py-4">
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                           <Breakdown
                             title="Vibe signals"
                             score={d.vibeScore}
-                            expected={s.expectVibe}
+                            expected={sample.expectVibe}
                             ok={vibeOk}
                             signals={d.signals.filter((x) => x.category === "vibe")}
                           />
                           <Breakdown
                             title="AI signals"
                             score={d.aiScore}
-                            expected={s.expectAi}
+                            expected={sample.expectAi}
                             ok={aiOk}
                             signals={d.signals.filter((x) => x.category === "ai")}
                           />
@@ -263,6 +380,11 @@ function TestPage() {
               })}
             </tbody>
           </table>
+          {filteredRows.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No repos match the selected filters.
+            </div>
+          )}
         </div>
       </div>
     </div>
