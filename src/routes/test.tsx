@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueries } from "@tanstack/react-query";
+import { Fragment, useState } from "react";
 import { analyzeUrl } from "../lib/analyze.functions";
 import { TEST_SAMPLES, passes, scoreBucket } from "../lib/test-samples";
-import type { AnalysisResult } from "../lib/detectors/signals";
+import type { AnalysisResult, Signal } from "../lib/detectors/signals";
 
 export const Route = createFileRoute("/test")({
   head: () => ({
@@ -28,8 +29,71 @@ function Badge({ ok, children }: { ok: boolean | null; children: React.ReactNode
   return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>{children}</span>;
 }
 
+function Breakdown({
+  title,
+  score,
+  expected,
+  ok,
+  signals,
+}: {
+  title: string;
+  score: number;
+  expected: string;
+  ok: boolean | null;
+  signals: Signal[];
+}) {
+  const max = Math.max(1, ...signals.map((s) => s.weight));
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="font-mono">{score}</span>
+          <span>vs {expected}</span>
+          <Badge ok={ok}>{ok ? "PASS" : "FAIL"}</Badge>
+        </div>
+      </div>
+      {signals.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          No signals fired — score stays at 0, which reads as “low”.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {signals
+            .slice()
+            .sort((a, b) => b.weight - a.weight)
+            .map((sig) => (
+              <li key={sig.id}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium">{sig.label}</span>
+                  <span className="font-mono text-xs text-muted-foreground">+{sig.weight}</span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-foreground/60"
+                    style={{ width: `${Math.round((sig.weight / max) * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{sig.evidence}</p>
+                {sig.sourceRef && (
+                  <p className="text-[11px] font-mono text-muted-foreground/70">{sig.sourceRef}</p>
+                )}
+              </li>
+            ))}
+        </ul>
+      )}
+      <div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
+        Total {signals.reduce((a, b) => a + b.weight, 0)} raw → {score} capped ·{" "}
+        {signals.length} signal{signals.length === 1 ? "" : "s"}
+      </div>
+    </div>
+  );
+}
+
 function TestPage() {
   const analyze = useServerFn(analyzeUrl);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
 
   const queries = useQueries({
     queries: TEST_SAMPLES.map((s) => ({
@@ -109,18 +173,31 @@ function TestPage() {
                 const err = q.error as Error | null;
                 const vibeOk = d && !d.error ? passes(d.vibeScore, s.expectVibe) : null;
                 const aiOk = d && !d.error ? passes(d.aiScore, s.expectAi) : null;
+                const open = !!expanded[s.url];
                 return (
-                  <tr key={s.url} className="border-t border-border align-top">
+                  <Fragment key={s.url}>
+                  <tr className="border-t border-border align-top">
                     <td className="px-4 py-3">
                       <div className="font-medium">{s.label}</div>
                       <div className="text-xs text-muted-foreground">{s.note}</div>
-                      <Link
-                        to="/scan"
-                        search={{ url: s.url }}
-                        className="mt-1 inline-block text-xs text-muted-foreground underline hover:text-foreground"
-                      >
-                        open scan →
-                      </Link>
+                      <div className="mt-1 flex gap-3">
+                        <Link
+                          to="/scan"
+                          search={{ url: s.url }}
+                          className="inline-block text-xs text-muted-foreground underline hover:text-foreground"
+                        >
+                          open scan →
+                        </Link>
+                        {d && !d.error && (
+                          <button
+                            type="button"
+                            onClick={() => setExpanded((e) => ({ ...e, [s.url]: !e[s.url] }))}
+                            className="text-xs text-muted-foreground underline hover:text-foreground"
+                          >
+                            {open ? "hide breakdown" : `why? (${d.signals.length} signals)`}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {d && !d.error ? (
@@ -159,6 +236,29 @@ function TestPage() {
                       )}
                     </td>
                   </tr>
+                  {open && d && !d.error && (
+                    <tr key={`${s.url}-detail`} className="border-t border-border bg-muted/20">
+                      <td colSpan={4} className="px-4 py-4">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <Breakdown
+                            title="Vibe signals"
+                            score={d.vibeScore}
+                            expected={s.expectVibe}
+                            ok={vibeOk}
+                            signals={d.signals.filter((x) => x.category === "vibe")}
+                          />
+                          <Breakdown
+                            title="AI signals"
+                            score={d.aiScore}
+                            expected={s.expectAi}
+                            ok={aiOk}
+                            signals={d.signals.filter((x) => x.category === "ai")}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
