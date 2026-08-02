@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueries } from "@tanstack/react-query";
+import { useState } from "react";
 import { analyzeUrl } from "../lib/analyze.functions";
 import { TEST_SAMPLES, passes, scoreBucket } from "../lib/test-samples";
-import type { AnalysisResult } from "../lib/detectors/signals";
+import type { AnalysisResult, Signal } from "../lib/detectors/signals";
 
 export const Route = createFileRoute("/test")({
   head: () => ({
