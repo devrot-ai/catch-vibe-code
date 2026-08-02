@@ -1,16 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import { useQueries } from "@tanstack/react-query";
-import { Fragment, useMemo, useState } from "react";
-import { analyzeUrl } from "../lib/analyze.functions";
-import { TEST_SAMPLES, passes, scoreBucket } from "../lib/test-samples";
-import type { AnalysisResult, Signal } from "../lib/detectors/signals";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { runRegressionSuite, type RegressionCaseResult } from "../lib/regression-suite";
+import {
+  createTestRunSnapshot,
+  formatTestRunDate,
+  getSnapshotDelta,
+  readTestRunHistory,
+  type TestRunSnapshot,
+  writeTestRunHistory,
+} from "../lib/test-history";
 
 export const Route = createFileRoute("/test")({
   head: () => ({
     meta: [
       { title: "Test mode — Vibe & AI Detector" },
-      { name: "description", content: "Run the analyzer against known sample repos and see pass/fail metrics." },
+      {
+        name: "description",
+        content:
+          "Run the analyzer against deterministic sample fixtures and see pass/fail metrics.",
+      },
       { property: "og:title", content: "Test mode — Vibe & AI Detector" },
       { property: "og:description", content: "Regression harness for Vibe and AI heuristics." },
       { name: "robots", content: "noindex" },
@@ -26,7 +34,9 @@ function Badge({ ok, children }: { ok: boolean | null; children: React.ReactNode
       : ok
         ? "bg-emerald-500/15 text-emerald-500"
         : "bg-red-500/15 text-red-500";
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>{children}</span>;
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>{children}</span>
+  );
 }
 
 function Breakdown({
@@ -40,7 +50,7 @@ function Breakdown({
   score: number;
   expected: string;
   ok: boolean | null;
-  signals: Signal[];
+  signals: RegressionCaseResult["signals"];
 }) {
   const max = Math.max(1, ...signals.map((s) => s.weight));
   return (
@@ -83,19 +93,186 @@ function Breakdown({
         </ul>
       )}
       <div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
-        Total {signals.reduce((a, b) => a + b.weight, 0)} raw → {score} capped ·{" "}
-        {signals.length} signal{signals.length === 1 ? "" : "s"}
+        Total {signals.reduce((a, b) => a + b.weight, 0)} raw → {score} capped · {signals.length}{" "}
+        signal{signals.length === 1 ? "" : "s"}
       </div>
     </div>
   );
 }
 
-function isLowConfidence(score: number, signalCount: number): boolean {
-  // Sparse evidence coverage.
-  if (signalCount <= 2) return true;
-  // Within 5 points of a bucket boundary (35 or 65).
-  const distance = Math.min(Math.abs(score - 35), Math.abs(score - 65));
-  return distance <= 5;
+type BucketThresholds = {
+  lowMax: number;
+  mediumMax: number;
+};
+
+type ConfidenceRules = {
+  minSignals: number;
+  boundaryWindow: number;
+};
+
+type SortKey = "sample" | "vibe" | "ai" | "confidence";
+
+type SortDirection = "asc" | "desc";
+
+type SortConfig = {
+  key: SortKey;
+  direction: SortDirection;
+};
+
+const SORT_DEFAULT_DIRECTIONS: Record<SortKey, SortDirection> = {
+  sample: "asc",
+  vibe: "desc",
+  ai: "desc",
+  confidence: "asc",
+};
+
+function confidenceRank(level: string): number {
+  if (level === "low") return 0;
+  if (level === "medium") return 1;
+  return 2;
+}
+
+function compareRows(
+  a: RegressionCaseResult,
+  b: RegressionCaseResult,
+  sortConfig: SortConfig,
+): number {
+  const multiplier = sortConfig.direction === "asc" ? 1 : -1;
+
+  switch (sortConfig.key) {
+    case "sample":
+      return multiplier * a.label.localeCompare(b.label);
+    case "vibe":
+      return multiplier * (a.vibeScore - b.vibeScore);
+    case "ai":
+      return multiplier * (a.aiScore - b.aiScore);
+    case "confidence": {
+      const aConfidence = Math.min(
+        confidenceRank(a.confidence.vibe.level),
+        confidenceRank(a.confidence.ai.level),
+      );
+      const bConfidence = Math.min(
+        confidenceRank(b.confidence.vibe.level),
+        confidenceRank(b.confidence.ai.level),
+      );
+      return multiplier * (aConfidence - bConfidence);
+    }
+  }
+}
+
+function buildSignalSummary(signals: RegressionCaseResult["signals"]): string {
+  if (signals.length === 0) return "None";
+
+  return signals
+    .slice()
+    .sort((a, b) => b.weight - a.weight)
+    .map((signal) => {
+      const source = signal.sourceRef ? ` (${signal.sourceRef})` : "";
+      return `${signal.label} [+${signal.weight}]: ${signal.evidence}${source}`;
+    })
+    .join(" | ");
+}
+
+function csvEscape(value: string | number | boolean | null | undefined): string {
+  const text = value == null ? "" : String(value);
+  const escaped = text.replaceAll('"', '""');
+  return `"${escaped}"`;
+}
+
+function buildCsvReport(
+  rows: RegressionCaseResult[],
+  sortConfig: SortConfig,
+  bucketThresholds: BucketThresholds,
+  confidenceRules: ConfidenceRules,
+): string {
+  const lines = [
+    ["Test report", new Date().toISOString()],
+    ["Sort key", sortConfig.key],
+    ["Sort direction", sortConfig.direction],
+    ["Low / Medium boundary", bucketThresholds.lowMax],
+    ["Medium / High boundary", bucketThresholds.mediumMax],
+    ["Minimum signals", confidenceRules.minSignals],
+    ["Boundary window", confidenceRules.boundaryWindow],
+    [],
+    [
+      "Sample",
+      "Vibe score",
+      "Vibe bucket",
+      "AI score",
+      "AI bucket",
+      "Vibe pass",
+      "AI pass",
+      "Vibe confidence",
+      "AI confidence",
+      "Vibe why?",
+      "AI why?",
+      "Total signals",
+      "Note",
+    ],
+    ...rows.map((row) => {
+      const vibeSignals = row.signals.filter((signal) => signal.category === "vibe");
+      const aiSignals = row.signals.filter((signal) => signal.category === "ai");
+      return [
+        row.label,
+        row.vibeScore,
+        row.vibeBucket,
+        row.aiScore,
+        row.aiBucket,
+        row.vibePass,
+        row.aiPass,
+        row.confidence.vibe.label,
+        row.confidence.ai.label,
+        buildSignalSummary(vibeSignals),
+        buildSignalSummary(aiSignals),
+        row.signals.length,
+        row.note,
+      ];
+    }),
+  ];
+
+  return lines
+    .map((line) => (line.length === 0 ? "" : line.map((entry) => csvEscape(entry)).join(",")))
+    .join("\n");
+}
+
+function downloadTextFile(filename: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function classifyBucket(
+  score: number,
+  thresholds: BucketThresholds,
+): RegressionCaseResult["vibeBucket"] {
+  if (score >= thresholds.mediumMax) return "high";
+  if (score >= thresholds.lowMax) return "medium";
+  return "low";
+}
+
+function isLowConfidenceWithRules(
+  score: number,
+  signalCount: number,
+  thresholds: BucketThresholds,
+  confidenceRules: ConfidenceRules,
+): boolean {
+  if (signalCount <= confidenceRules.minSignals) return true;
+  const distanceToLow = Math.abs(score - thresholds.lowMax);
+  const distanceToHigh = Math.abs(score - thresholds.mediumMax);
+  return Math.min(distanceToLow, distanceToHigh) <= confidenceRules.boundaryWindow;
+}
+
+function clampThresholds(next: BucketThresholds): BucketThresholds {
+  const lowMax = Math.max(1, Math.min(next.lowMax, next.mediumMax - 1));
+  const mediumMax = Math.max(lowMax + 1, Math.min(next.mediumMax, 99));
+  return {
+    lowMax,
+    mediumMax,
+  };
 }
 
 export type FilterKey = "failedVibe" | "failedAi" | "lowConfidence";
@@ -124,74 +301,214 @@ function FilterChip({
   );
 }
 
+function SortHeader({
+  active,
+  direction,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  direction: SortDirection;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-left uppercase tracking-wider"
+    >
+      <span>{label}</span>
+      <span aria-hidden className="text-[10px] leading-none">
+        {active ? (direction === "asc" ? "↑" : "↓") : "↕"}
+      </span>
+    </button>
+  );
+}
+
+function DeltaValue({ value }: { value: number }) {
+  const tone =
+    value > 0 ? "text-emerald-500" : value < 0 ? "text-red-500" : "text-muted-foreground";
+  const prefix = value > 0 ? "+" : "";
+
+  return <span className={`font-mono text-xs ${tone}`}>{`${prefix}${value}`}</span>;
+}
+
+function HistoryRow({
+  run,
+  active,
+  previous,
+  onClick,
+}: {
+  run: TestRunSnapshot;
+  active: boolean;
+  previous?: TestRunSnapshot;
+  onClick: () => void;
+}) {
+  const comparison = previous ? getSnapshotDelta(run, previous) : null;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-lg border p-3 text-left transition-colors ${
+        active ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted/40"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">{formatTestRunDate(run.createdAt)}</div>
+          <div className="text-xs text-muted-foreground">{run.totalCases} fixtures</div>
+        </div>
+        {active && <Badge ok>current</Badge>}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+        <span>
+          Vibe {run.vibePassCount}/{run.totalCases}
+        </span>
+        <span>
+          AI {run.aiPassCount}/{run.totalCases}
+        </span>
+        <span>Overall {run.overallPassRate}%</span>
+      </div>
+      {comparison && (
+        <div className="mt-2 flex flex-wrap gap-3">
+          <DeltaValue value={comparison.vibePassDelta} />
+          <DeltaValue value={comparison.aiPassDelta} />
+          <DeltaValue value={comparison.overallPassDelta} />
+        </div>
+      )}
+    </button>
+  );
+}
+
+function ComparisonRow({
+  label,
+  current,
+  previous,
+}: {
+  label: string;
+  current: TestRunSnapshot;
+  previous?: TestRunSnapshot;
+}) {
+  if (!previous) {
+    return null;
+  }
+
+  const currentCase = current.cases.find((entry) => entry.id === label);
+  const previousCase = previous.cases.find((entry) => entry.id === label);
+  if (!currentCase || !previousCase) return null;
+
+  const vibeDelta = currentCase.vibeScore - previousCase.vibeScore;
+  const aiDelta = currentCase.aiScore - previousCase.aiScore;
+  if (vibeDelta === 0 && aiDelta === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-3 text-sm">
+      <div className="font-medium">{currentCase.label}</div>
+      <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
+        <span>
+          Vibe {previousCase.vibeScore} → {currentCase.vibeScore}
+        </span>
+        <DeltaValue value={vibeDelta} />
+        <span>
+          AI {previousCase.aiScore} → {currentCase.aiScore}
+        </span>
+        <DeltaValue value={aiDelta} />
+      </div>
+    </div>
+  );
+}
+
 function TestPage() {
-  const analyze = useServerFn(analyzeUrl);
+  const results = useMemo(() => runRegressionSuite(), []);
+  const currentSummary = useMemo(() => createTestRunSnapshot(results), [results]);
+  const [history, setHistory] = useState<TestRunSnapshot[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "ai", direction: "desc" });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [bucketThresholds, setBucketThresholds] = useState<BucketThresholds>({
+    lowMax: 35,
+    mediumMax: 65,
+  });
+  const [confidenceRules, setConfidenceRules] = useState<ConfidenceRules>({
+    minSignals: 2,
+    boundaryWindow: 5,
+  });
   const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
     failedVibe: false,
     failedAi: false,
     lowConfidence: false,
   });
 
-  const queries = useQueries({
-    queries: TEST_SAMPLES.map((s) => ({
-      queryKey: ["test-scan", s.url],
-      queryFn: () => analyze({ data: { url: s.url } }) as Promise<AnalysisResult>,
-      staleTime: 5 * 60_000,
-      retry: false,
-    })),
-  });
+  useEffect(() => {
+    const nextHistory = writeTestRunHistory(currentSummary);
+    setHistory(nextHistory);
+    setSelectedRunId((current) => current ?? nextHistory[0]?.id ?? null);
+  }, [currentSummary]);
 
-  const rows = useMemo(
+  const totalDone = results.length;
+  const visibleRows = useMemo(
     () =>
-      TEST_SAMPLES.map((s, i) => ({
-        sample: s,
-        query: queries[i],
-        index: i,
-      })),
-    [queries],
+      results.map((row) => {
+        const vibeSignals = row.signals.filter((signal) => signal.category === "vibe");
+        const aiSignals = row.signals.filter((signal) => signal.category === "ai");
+        const vibeBucket = classifyBucket(row.vibeScore, bucketThresholds);
+        const aiBucket = classifyBucket(row.aiScore, bucketThresholds);
+
+        return {
+          ...row,
+          vibeBucket,
+          aiBucket,
+          vibePass: vibeBucket === row.expectedVibe,
+          aiPass: aiBucket === row.expectedAi,
+          lowConfidence:
+            isLowConfidenceWithRules(
+              row.vibeScore,
+              vibeSignals.length,
+              bucketThresholds,
+              confidenceRules,
+            ) ||
+            isLowConfidenceWithRules(
+              row.aiScore,
+              aiSignals.length,
+              bucketThresholds,
+              confidenceRules,
+            ),
+        };
+      }),
+    [results, bucketThresholds, confidenceRules],
   );
+  const vibePass = visibleRows.filter((r) => r.vibePass).length;
+  const aiPass = visibleRows.filter((r) => r.aiPass).length;
+  const activeRun = history.find((run) => run.id === selectedRunId) ?? history[0] ?? null;
+  const activeRunIndex = activeRun ? history.findIndex((run) => run.id === activeRun.id) : -1;
+  const previousRun = activeRunIndex >= 0 ? history[activeRunIndex + 1] : undefined;
+  const activeComparison = activeRun ? getSnapshotDelta(activeRun, previousRun) : null;
+  const changedCases = activeComparison?.changedCases ?? [];
 
-  const allDone = queries.filter((q) => q.data && !q.data.error).length;
-  let vibePass = 0;
-  let aiPass = 0;
-  let totalDone = 0;
-  queries.forEach((q, i) => {
-    const d = q.data;
-    if (!d || d.error) return;
-    totalDone++;
-    if (passes(d.vibeScore, TEST_SAMPLES[i].expectVibe)) vibePass++;
-    if (passes(d.aiScore, TEST_SAMPLES[i].expectAi)) aiPass++;
-  });
-
-  const filteredRows = rows.filter(({ sample, query }) => {
-    const d = query.data;
-    if (!d || d.error) return true; // Keep loading/error rows visible.
-    const vibeOk = passes(d.vibeScore, sample.expectVibe);
-    const aiOk = passes(d.aiScore, sample.expectAi);
-    const lowConf = isLowConfidence(d.vibeScore, d.signals.length) || isLowConfidence(d.aiScore, d.signals.length);
-
+  const filteredRows = visibleRows.filter((row) => {
     if (!filters.failedVibe && !filters.failedAi && !filters.lowConfidence) return true;
-
-    const matches =
-      (filters.failedVibe && !vibeOk) ||
-      (filters.failedAi && !aiOk) ||
-      (filters.lowConfidence && lowConf);
-    return matches;
+    return (
+      (filters.failedVibe && !row.vibePass) ||
+      (filters.failedAi && !row.aiPass) ||
+      (filters.lowConfidence && row.lowConfidence)
+    );
   });
 
-  let filteredVibePass = 0;
-  let filteredAiPass = 0;
-  let filteredDone = 0;
-  filteredRows.forEach(({ sample, query }) => {
-    const d = query.data;
-    if (!d || d.error) return;
-    filteredDone++;
-    if (passes(d.vibeScore, sample.expectVibe)) filteredVibePass++;
-    if (passes(d.aiScore, sample.expectAi)) filteredAiPass++;
-  });
-
+  const filteredDone = filteredRows.length;
+  const filteredVibePass = filteredRows.filter((row) => row.vibePass).length;
+  const filteredAiPass = filteredRows.filter((row) => row.aiPass).length;
   const anyFilter = filters.failedVibe || filters.failedAi || filters.lowConfidence;
+  const sortedRows = useMemo(
+    () => [...filteredRows].sort((a, b) => compareRows(a, b, sortConfig)),
+    [filteredRows, sortConfig],
+  );
+  const handleExport = () => {
+    const report = buildCsvReport(sortedRows, sortConfig, bucketThresholds, confidenceRules);
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    downloadTextFile(`test-report-${dateStamp}.csv`, report, "text/csv;charset=utf-8");
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -201,13 +518,13 @@ function TestPage() {
             ← Home
           </Link>
           <div className="text-xs text-muted-foreground">
-            {allDone}/{TEST_SAMPLES.length} scans complete
+            {totalDone}/{totalDone} fixtures complete
           </div>
         </div>
 
         <h1 className="text-3xl font-semibold tracking-tight">Test mode</h1>
         <p className="mt-2 text-muted-foreground">
-          Runs the analyzer against known sample GitHub repos and checks each score against an
+          Runs the analyzer against deterministic sample fixtures and checks each score against an
           expected bucket (low &lt; 35, medium 35–64, high ≥ 65).
         </p>
 
@@ -215,20 +532,235 @@ function TestPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs uppercase tracking-wider text-muted-foreground">Vibe pass</div>
             <div className="mt-1 text-2xl font-semibold">
-              {vibePass}/{totalDone || TEST_SAMPLES.length}
+              {vibePass}/{totalDone}
             </div>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs uppercase tracking-wider text-muted-foreground">AI pass</div>
             <div className="mt-1 text-2xl font-semibold">
-              {aiPass}/{totalDone || TEST_SAMPLES.length}
+              {aiPass}/{totalDone}
             </div>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs uppercase tracking-wider text-muted-foreground">Overall</div>
             <div className="mt-1 text-2xl font-semibold">
-              {totalDone > 0 ? Math.round(((vibePass + aiPass) / (totalDone * 2)) * 100) : 0}%
+              {Math.round(((vibePass + aiPass) / (totalDone * 2)) * 100)}%
             </div>
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-lg border border-border bg-card p-4">
+          <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterChip
+                active={filters.failedVibe}
+                onClick={() => setFilters((f) => ({ ...f, failedVibe: !f.failedVibe }))}
+              >
+                Failed Vibe
+              </FilterChip>
+              <FilterChip
+                active={filters.failedAi}
+                onClick={() => setFilters((f) => ({ ...f, failedAi: !f.failedAi }))}
+              >
+                Failed AI
+              </FilterChip>
+              <FilterChip
+                active={filters.lowConfidence}
+                onClick={() => setFilters((f) => ({ ...f, lowConfidence: !f.lowConfidence }))}
+              >
+                Low confidence / evidence
+              </FilterChip>
+              {anyFilter && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFilters({ failedVibe: false, failedAi: false, lowConfidence: false })
+                  }
+                  className="text-xs text-muted-foreground underline hover:text-foreground"
+                >
+                  clear
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div>
+                Showing {filteredRows.length} of {results.length} fixtures
+                {anyFilter && filteredDone > 0 && (
+                  <span className="ml-2 text-foreground">
+                    filtered pass rate:{" "}
+                    {Math.round(((filteredVibePass + filteredAiPass) / (filteredDone * 2)) * 100)}%
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleExport}
+                className="rounded-full border border-border bg-card px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted/50"
+              >
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left">
+                    <SortHeader
+                      active={sortConfig.key === "sample"}
+                      direction={sortConfig.direction}
+                      label="Sample"
+                      onClick={() =>
+                        setSortConfig((current) =>
+                          current.key === "sample"
+                            ? {
+                                key: "sample",
+                                direction: current.direction === "asc" ? "desc" : "asc",
+                              }
+                            : { key: "sample", direction: SORT_DEFAULT_DIRECTIONS.sample },
+                        )
+                      }
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <SortHeader
+                      active={sortConfig.key === "vibe"}
+                      direction={sortConfig.direction}
+                      label="Vibe likelihood"
+                      onClick={() =>
+                        setSortConfig((current) =>
+                          current.key === "vibe"
+                            ? {
+                                key: "vibe",
+                                direction: current.direction === "asc" ? "desc" : "asc",
+                              }
+                            : { key: "vibe", direction: SORT_DEFAULT_DIRECTIONS.vibe },
+                        )
+                      }
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <SortHeader
+                      active={sortConfig.key === "ai"}
+                      direction={sortConfig.direction}
+                      label="AI risk"
+                      onClick={() =>
+                        setSortConfig((current) =>
+                          current.key === "ai"
+                            ? { key: "ai", direction: current.direction === "asc" ? "desc" : "asc" }
+                            : { key: "ai", direction: SORT_DEFAULT_DIRECTIONS.ai },
+                        )
+                      }
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <SortHeader
+                      active={sortConfig.key === "confidence"}
+                      direction={sortConfig.direction}
+                      label="Confidence"
+                      onClick={() =>
+                        setSortConfig((current) =>
+                          current.key === "confidence"
+                            ? {
+                                key: "confidence",
+                                direction: current.direction === "asc" ? "desc" : "asc",
+                              }
+                            : { key: "confidence", direction: SORT_DEFAULT_DIRECTIONS.confidence },
+                        )
+                      }
+                    />
+                  </th>
+                </tr>
+              </thead>
+                    key={run.id}
+                    run={run}
+                    active={run.id === activeRun?.id}
+                    previous={history[index + 1]}
+                    onClick={() => setSelectedRunId(run.id)}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Selected run comparison</div>
+                <div className="text-xs text-muted-foreground">
+                  {activeRun
+                    ? formatTestRunDate(activeRun.createdAt)
+                    : "Waiting for history to load"}
+                </div>
+              </div>
+              {activeRun && previousRun ? (
+                <div className="text-right text-xs text-muted-foreground">
+                  vs {formatTestRunDate(previousRun.createdAt)}
+                </div>
+              ) : (
+                <div className="text-right text-xs text-muted-foreground">No previous run</div>
+              )}
+            </div>
+
+            {activeRun && activeComparison ? (
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-border bg-background/60 p-3">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Vibe delta
+                  </div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {activeComparison.vibePassDelta >= 0 ? "+" : ""}
+                    {activeComparison.vibePassDelta}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-background/60 p-3">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                    AI delta
+                  </div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {activeComparison.aiPassDelta >= 0 ? "+" : ""}
+                    {activeComparison.aiPassDelta}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-background/60 p-3">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Pass-rate delta
+                  </div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {activeComparison.overallPassDelta >= 0 ? "+" : ""}
+                    {activeComparison.overallPassDelta}%
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {activeRun && previousRun ? (
+              <div className="mt-4 space-y-2">
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Changed fixtures
+                </div>
+                {changedCases.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                    No score changes from the previous run.
+                  </div>
+                ) : (
+                  changedCases.map((entry) => (
+                    <ComparisonRow
+                      key={entry.id}
+                      label={entry.id}
+                      current={activeRun}
+                      previous={previousRun}
+                    />
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                Once you have at least two saved runs, this area will compare Vibe and AI score
+                changes between dates.
+              </div>
+            )}
           </div>
         </div>
 
@@ -255,7 +787,9 @@ function TestPage() {
             {anyFilter && (
               <button
                 type="button"
-                onClick={() => setFilters({ failedVibe: false, failedAi: false, lowConfidence: false })}
+                onClick={() =>
+                  setFilters({ failedVibe: false, failedAi: false, lowConfidence: false })
+                }
                 className="text-xs text-muted-foreground underline hover:text-foreground"
               >
                 clear
@@ -263,10 +797,10 @@ function TestPage() {
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            Showing {filteredRows.length} of {rows.length} repos
+            Showing {filteredRows.length} of {results.length} fixtures
             {anyFilter && filteredDone > 0 && (
               <span className="ml-2 text-foreground">
-                filtered pass rate: {" "}
+                filtered pass rate:{" "}
                 {Math.round(((filteredVibePass + filteredAiPass) / (filteredDone * 2)) * 100)}%
               </span>
             )}
@@ -277,112 +811,152 @@ function TestPage() {
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 text-left">Sample</th>
-                <th className="px-4 py-3 text-left">Vibe (expected)</th>
-                <th className="px-4 py-3 text-left">AI (expected)</th>
-                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">
+                  <SortHeader
+                    active={sortConfig.key === "sample"}
+                    direction={sortConfig.direction}
+                    label="Sample"
+                    onClick={() =>
+                      setSortConfig((current) =>
+                        current.key === "sample"
+                          ? {
+                              key: "sample",
+                              direction: current.direction === "asc" ? "desc" : "asc",
+                            }
+                          : { key: "sample", direction: SORT_DEFAULT_DIRECTIONS.sample },
+                      )
+                    }
+                  />
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <SortHeader
+                    active={sortConfig.key === "vibe"}
+                    direction={sortConfig.direction}
+                    label="Vibe likelihood"
+                    onClick={() =>
+                      setSortConfig((current) =>
+                        current.key === "vibe"
+                          ? {
+                              key: "vibe",
+                              direction: current.direction === "asc" ? "desc" : "asc",
+                            }
+                          : { key: "vibe", direction: SORT_DEFAULT_DIRECTIONS.vibe },
+                      )
+                    }
+                  />
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <SortHeader
+                    active={sortConfig.key === "ai"}
+                    direction={sortConfig.direction}
+                    label="AI risk"
+                    onClick={() =>
+                      setSortConfig((current) =>
+                        current.key === "ai"
+                          ? { key: "ai", direction: current.direction === "asc" ? "desc" : "asc" }
+                          : { key: "ai", direction: SORT_DEFAULT_DIRECTIONS.ai },
+                      )
+                    }
+                  />
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <SortHeader
+                    active={sortConfig.key === "confidence"}
+                    direction={sortConfig.direction}
+                    label="Confidence"
+                    onClick={() =>
+                      setSortConfig((current) =>
+                        current.key === "confidence"
+                          ? {
+                              key: "confidence",
+                              direction: current.direction === "asc" ? "desc" : "asc",
+                            }
+                          : { key: "confidence", direction: SORT_DEFAULT_DIRECTIONS.confidence },
+                      )
+                    }
+                  />
+                </th>
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map(({ sample, query, index }) => {
-                const d = query.data;
-                const loading = query.isFetching;
-                const err = query.error as Error | null;
-                const vibeOk = d && !d.error ? passes(d.vibeScore, sample.expectVibe) : null;
-                const aiOk = d && !d.error ? passes(d.aiScore, sample.expectAi) : null;
-                const open = !!expanded[sample.url];
+            <tbody>
+              {sortedRows.map((row) => {
+                const open = !!expanded[row.id];
                 return (
-                  <Fragment key={sample.url}>
-                  <tr className="border-t border-border align-top">
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{sample.label}</div>
-                      <div className="text-xs text-muted-foreground">{sample.note}</div>
-                      <div className="mt-1 flex gap-3">
-                        <Link
-                          to="/scan"
-                          search={{ url: sample.url }}
-                          className="inline-block text-xs text-muted-foreground underline hover:text-foreground"
-                        >
-                          open scan →
-                        </Link>
-                        {d && !d.error && (
+                  <Fragment key={row.id}>
+                    <tr className="border-t border-border align-top">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{row.label}</div>
+                        <div className="text-xs text-muted-foreground">{row.note}</div>
+                        <div className="mt-1 flex gap-3">
                           <button
                             type="button"
-                            onClick={() => setExpanded((e) => ({ ...e, [sample.url]: !e[sample.url] }))}
+                            onClick={() => setExpanded((e) => ({ ...e, [row.id]: !e[row.id] }))}
                             className="text-xs text-muted-foreground underline hover:text-foreground"
                           >
-                            {open ? "hide breakdown" : `why? (${d.signals.length} signals)`}
+                            {open ? "hide breakdown" : `why? (${row.signals.length} signals)`}
                           </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {d && !d.error ? (
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono">{d.vibeScore}</span>
-                          <span className="text-xs text-muted-foreground">
-                            ({scoreBucket(d.vibeScore)})
-                          </span>
-                          <Badge ok={vibeOk}>{vibeOk ? "PASS" : "FAIL"}</Badge>
                         </div>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                      <div className="text-xs text-muted-foreground">expect: {sample.expectVibe}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {d && !d.error ? (
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono">{d.aiScore}</span>
-                          <span className="text-xs text-muted-foreground">
-                            ({scoreBucket(d.aiScore)})
-                          </span>
-                          <Badge ok={aiOk}>{aiOk ? "PASS" : "FAIL"}</Badge>
+                          <span className="font-mono">{row.vibeScore}</span>
+                          <span className="text-xs text-muted-foreground">({row.vibeBucket})</span>
+                          <Badge ok={row.vibePass}>{row.vibePass ? "PASS" : "FAIL"}</Badge>
                         </div>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                      <div className="text-xs text-muted-foreground">expect: {sample.expectAi}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {loading && <span className="text-muted-foreground">scanning…</span>}
-                      {err && <span className="text-red-500">{err.message}</span>}
-                      {d?.error && <span className="text-red-500">{d.error}</span>}
-                      {d && !d.error && !loading && (
-                        <span className="text-emerald-500">ok</span>
-                      )}
-                    </td>
-                  </tr>
-                  {open && d && !d.error && (
-                    <tr key={`${sample.url}-detail`} className="border-t border-border bg-muted/20">
-                      <td colSpan={4} className="px-4 py-4">
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                          <Breakdown
-                            title="Vibe signals"
-                            score={d.vibeScore}
-                            expected={sample.expectVibe}
-                            ok={vibeOk}
-                            signals={d.signals.filter((x) => x.category === "vibe")}
-                          />
-                          <Breakdown
-                            title="AI signals"
-                            score={d.aiScore}
-                            expected={sample.expectAi}
-                            ok={aiOk}
-                            signals={d.signals.filter((x) => x.category === "ai")}
-                          />
+                        <div className="text-xs text-muted-foreground">
+                          expect: {row.expectedVibe}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">{row.aiScore}</span>
+                          <span className="text-xs text-muted-foreground">({row.aiBucket})</span>
+                          <Badge ok={row.aiPass}>{row.aiPass ? "PASS" : "FAIL"}</Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          expect: {row.expectedAi}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className={row.lowConfidence ? "text-amber-500" : "text-emerald-500"}>
+                          {row.lowConfidence ? "low confidence" : "ok"}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Vibe: {row.confidence.vibe.label} · AI: {row.confidence.ai.label}
                         </div>
                       </td>
                     </tr>
-                  )}
+                    {open && (
+                      <tr className="border-t border-border bg-muted/20">
+                        <td colSpan={4} className="px-4 py-4">
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <Breakdown
+                              title="Vibe signals"
+                              score={row.vibeScore}
+                              expected={row.expectedVibe}
+                              ok={row.vibePass}
+                              signals={row.signals.filter((signal) => signal.category === "vibe")}
+                            />
+                            <Breakdown
+                              title="AI signals"
+                              score={row.aiScore}
+                              expected={row.expectedAi}
+                              ok={row.aiPass}
+                              signals={row.signals.filter((signal) => signal.category === "ai")}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 );
               })}
             </tbody>
           </table>
-          {filteredRows.length === 0 && (
+          {sortedRows.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No repos match the selected filters.
+              No fixtures match the selected filters.
             </div>
           )}
         </div>

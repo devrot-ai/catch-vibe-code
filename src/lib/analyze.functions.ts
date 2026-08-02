@@ -4,7 +4,7 @@ import { analyzeWebsite } from "./detectors/website";
 import type { AnalysisResult } from "./detectors/signals";
 
 export const analyzeUrl = createServerFn({ method: "POST" })
-  .inputValidator((data: { url: string }) => {
+  .validator((data: { url: string }) => {
     if (!data || typeof data.url !== "string") throw new Error("url required");
     const trimmed = data.url.trim();
     if (trimmed.length < 4 || trimmed.length > 500) throw new Error("invalid url length");

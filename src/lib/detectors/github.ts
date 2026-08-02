@@ -1,12 +1,10 @@
+import { type AnalysisResult, type Signal, scoreFromSignals, scoreConfidence } from "./signals";
+import { runSignalRules } from "./rule-engine";
 import {
-  type AnalysisResult,
-  type Signal,
-  scoreFromSignals,
-  detectTailwindClassDensity,
-  detectCssVariables,
-  detectTutorialVoice,
-  detectEmojiHeaders,
-} from "./signals";
+  createAiToolingRules,
+  createPackageFingerprintRules,
+  createReadmeHeuristicRules,
+} from "./rule-catalog";
 
 const GATEWAY = "https://connector-gateway.lovable.dev/github";
 
@@ -39,17 +37,6 @@ async function ghText(path: string, apiKey: string, connKey: string): Promise<st
   if (!res.ok) return null;
   return await res.text();
 }
-
-const AI_CONFIG_FILES = [
-  ".cursorrules",
-  ".cursor/rules",
-  ".windsurfrules",
-  "copilot-instructions.md",
-  ".github/copilot-instructions.md",
-  "AGENTS.md",
-  "CLAUDE.md",
-  ".lovable/project.json",
-];
 
 const VIBE_PACKAGES: Array<{ name: string; weight: number; label: string }> = [
   { name: "tailwindcss", weight: 8, label: "tailwindcss" },
@@ -90,11 +77,11 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
 
   const signals: Signal[] = [];
 
-  const meta = await ghJson<{ default_branch?: string; description?: string; stargazers_count?: number }>(
-    `/repos/${owner}/${repo}`,
-    apiKey,
-    connKey,
-  );
+  const meta = await ghJson<{
+    default_branch?: string;
+    description?: string;
+    stargazers_count?: number;
+  }>(`/repos/${owner}/${repo}`, apiKey, connKey);
   if (!meta) {
     return {
       target,
@@ -131,24 +118,25 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
       // contents API returns JSON with base64 by default; but Accept header not raw. Parse.
       try {
         const parsed = JSON.parse(pkgText);
-        const encoded = parsed.content && parsed.encoding === "base64"
-          ? Buffer.from(parsed.content, "base64").toString("utf8")
-          : pkgText;
-        const found: string[] = [];
-        let weightSum = 0;
-        for (const dep of VIBE_PACKAGES) {
-          if (encoded.includes(`"${dep.name}`) || encoded.includes(dep.name)) {
-            found.push(dep.label);
-            weightSum += dep.weight;
-          }
-        }
-        if (found.length > 0) {
+        const encoded =
+          parsed.content && parsed.encoding === "base64"
+            ? Buffer.from(parsed.content, "base64").toString("utf8")
+            : pkgText;
+        const packageSignals = runSignalRules(
+          encoded,
+          "package.json",
+          createPackageFingerprintRules(VIBE_PACKAGES),
+        );
+        if (packageSignals.length > 0) {
           signals.push({
             id: "vibe.packages",
             category: "vibe",
             label: "AI-friendly UI packages",
-            weight: Math.min(25, weightSum),
-            evidence: `package.json includes: ${found.join(", ")}.`,
+            weight: Math.min(
+              25,
+              packageSignals.reduce((sum, sig) => sum + sig.weight, 0),
+            ),
+            evidence: `package.json includes: ${packageSignals.map((sig) => sig.label).join(", ")}.`,
             sourceRef: "package.json",
           });
         }
@@ -160,7 +148,16 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
 
   // AI config files
   const aiFound: string[] = [];
-  for (const path of AI_CONFIG_FILES) {
+  for (const path of [
+    ".cursorrules",
+    ".cursor/rules",
+    ".windsurfrules",
+    "copilot-instructions.md",
+    ".github/copilot-instructions.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".lovable/project.json",
+  ]) {
     const res = await gh(`/repos/${owner}/${repo}/contents/${path}`, apiKey, connKey);
     if (res.ok) aiFound.push(path);
   }
@@ -180,21 +177,21 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     const readmeJson = (await readmeRes.json()) as { content?: string; encoding?: string };
     if (readmeJson.content && readmeJson.encoding === "base64") {
       const readme = Buffer.from(readmeJson.content, "base64").toString("utf8");
-      const tv = detectTutorialVoice(readme, "README");
-      if (tv) signals.push(tv);
-      const eh = detectEmojiHeaders(readme, "README");
-      if (eh) signals.push(eh);
+      signals.push(...runSignalRules(readme, "README", createReadmeHeuristicRules()));
     }
   }
 
   // Commit history
-  const commits = await ghJson<Array<{ commit: { message: string; author?: { name?: string } }; author?: { login?: string } | null; sha: string }>>(
-    `/repos/${owner}/${repo}/commits?per_page=100&sha=${branch}`,
-    apiKey,
-    connKey,
-  );
+  const commits = await ghJson<
+    Array<{
+      commit: { message: string; author?: { name?: string } };
+      author?: { login?: string } | null;
+      sha: string;
+    }>
+  >(`/repos/${owner}/${repo}/commits?per_page=100&sha=${branch}`, apiKey, connKey);
   if (commits && commits.length > 0) {
-    const kwRe = /(copilot|cursor|claude|chatgpt|gpt-?4|gemini|generated by ai|lovable|vibecod|codex)/i;
+    const kwRe =
+      /(copilot|cursor|claude|chatgpt|gpt-?4|gemini|generated by ai|lovable|vibecod|codex)/i;
     const kwHits = commits.filter((c) => kwRe.test(c.commit.message)).slice(0, 5);
     if (kwHits.length > 0) {
       signals.push({
@@ -207,7 +204,9 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     }
 
     const botAuthors = commits.filter(
-      (c) => /\[bot\]|copilot|lovable/i.test(c.author?.login ?? "") || /\[bot\]|copilot/i.test(c.commit.author?.name ?? ""),
+      (c) =>
+        /\[bot\]|copilot|lovable/i.test(c.author?.login ?? "") ||
+        /\[bot\]|copilot/i.test(c.commit.author?.name ?? ""),
     );
     if (botAuthors.length > 0) {
       signals.push({
@@ -242,7 +241,9 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
 
   // Scan a couple of CSS/HTML files for tailwind density + css vars
   const cssCandidates = (root ?? [])
-    .filter((f) => f.type === "file" && /\.(css|scss|html)$/i.test(f.name) && (f.size ?? 0) < 200_000)
+    .filter(
+      (f) => f.type === "file" && /\.(css|scss|html)$/i.test(f.name) && (f.size ?? 0) < 200_000,
+    )
     .slice(0, 3);
   for (const f of cssCandidates) {
     const raw = await ghText(`/repos/${owner}/${repo}/contents/${f.path}`, apiKey, connKey);
@@ -263,11 +264,17 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   }
 
   const { vibe, ai } = scoreFromSignals(signals);
+  const vibeSignals = signals.filter((signal) => signal.category === "vibe");
+  const aiSignals = signals.filter((signal) => signal.category === "ai");
   return {
     target,
     kind: "github",
     vibeScore: vibe,
     aiScore: ai,
+    confidence: {
+      vibe: scoreConfidence(vibe, vibeSignals.length),
+      ai: scoreConfidence(ai, aiSignals.length),
+    },
     signals,
     meta: { description: meta.description, stars: meta.stargazers_count, branch },
   };

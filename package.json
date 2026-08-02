@@ -8,6 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "test": "npm run test:regression",
+    "test:regression": "node --test tests/regression.test.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

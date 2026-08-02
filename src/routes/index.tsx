@@ -41,11 +41,14 @@ function Home() {
           Vibe & AI Detector
         </h1>
         <p className="mt-4 max-w-xl text-center text-muted-foreground">
-          Paste a GitHub repo or a public website. Get a Vibe Score (design-system fingerprints)
-          and an AI Score (LLM-assisted code fingerprints) with the evidence.
+          Paste a GitHub repo or a public website. Get a Vibe Score (design-system fingerprints) and
+          an AI Score (LLM-assisted code fingerprints) with the evidence.
         </p>
 
-        <form onSubmit={onSubmit} className="mt-10 flex w-full max-w-2xl flex-col gap-3 sm:flex-row">
+        <form
+          onSubmit={onSubmit}
+          className="mt-10 flex w-full max-w-2xl flex-col gap-3 sm:flex-row"
+        >
           <input
             type="text"
             required
@@ -71,7 +74,9 @@ function Home() {
 
         <div className="mt-16 grid w-full max-w-2xl grid-cols-1 gap-6 sm:grid-cols-2">
           <div className="rounded-lg border border-border bg-card p-5 text-card-foreground">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">Vibe signals</div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              Vibe signals
+            </div>
             <ul className="mt-3 space-y-1 text-sm">
               <li>Tailwind config & class density</li>
               <li>shadcn / Radix / lucide deps</li>

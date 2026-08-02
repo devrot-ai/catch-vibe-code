@@ -9,11 +9,20 @@ export interface Signal {
   sourceRef?: string;
 }
 
+export type ConfidenceLevel = "low" | "medium" | "high";
+
+export interface ScoreConfidence {
+  level: ConfidenceLevel;
+  label: string;
+  detail: string;
+}
+
 export interface AnalysisResult {
   target: string;
   kind: "github" | "website";
   vibeScore: number;
   aiScore: number;
+  confidence: { vibe: ScoreConfidence; ai: ScoreConfidence };
   signals: Signal[];
   meta?: { description?: string | null; stars?: number; branch?: string };
   error?: string;
@@ -32,9 +41,43 @@ export function scoreFromSignals(signals: Signal[]): { vibe: number; ai: number 
   };
 }
 
+export function scoreConfidence(score: number, signalCount: number): ScoreConfidence {
+  const distance = Math.min(Math.abs(score - 35), Math.abs(score - 65));
+  const scoreBand = score >= 65 ? "high" : score >= 35 ? "medium" : "low";
+
+  if (signalCount <= 2 || distance <= 5) {
+    return {
+      level: "low",
+      label: "Low confidence",
+      detail:
+        signalCount <= 2
+          ? `Only ${signalCount} signal${signalCount === 1 ? "" : "s"} fired.`
+          : "Score sits close to a bucket boundary, so the result can move with small evidence changes.",
+    };
+  }
+
+  if (signalCount <= 4 || distance <= 12) {
+    return {
+      level: "medium",
+      label: "Medium confidence",
+      detail:
+        scoreBand === "high"
+          ? "The score is likely directionally correct, but the evidence set is still limited."
+          : "There is enough evidence for a stable read, but the score is not heavily reinforced.",
+    };
+  }
+
+  return {
+    level: "high",
+    label: "High confidence",
+    detail: "Multiple signals reinforce this score and it is well away from the bucket boundaries.",
+  };
+}
+
 // ---------- Shared text detectors ----------
 
-const TW_UTILITY = /\b(?:bg|text|p[trblxy]?|m[trblxy]?|flex|grid|rounded|border|gap|w|h|min-[wh]|max-[wh]|shadow|ring|space-[xy]|items|justify|hover:|dark:|md:|lg:|sm:)[-:][a-z0-9/\[\]#().-]+/g;
+const TW_UTILITY =
+  /\b(?:bg|text|p[trblxy]?|m[trblxy]?|flex|grid|rounded|border|gap|w|h|min-[wh]|max-[wh]|shadow|ring|space-[xy]|items|justify|hover:|dark:|md:|lg:|sm:)[-:][a-z0-9/[\]#().-]+/g;
 
 export function detectTailwindClassDensity(text: string, source: string): Signal | null {
   const matches = text.match(TW_UTILITY);

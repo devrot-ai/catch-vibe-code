@@ -78,6 +78,15 @@ function SignalRow({ s }: { s: Signal }) {
   );
 }
 
+function ConfidencePill({ label, detail, tone }: { label: string; detail: string; tone: string }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${tone}`}>
+      <div className="text-xs font-semibold uppercase tracking-wider">{label}</div>
+      <div className="mt-1 text-xs">{detail}</div>
+    </div>
+  );
+}
+
 function ScanPage() {
   const { url } = Route.useSearch();
   const analyze = useServerFn(analyzeUrl);
@@ -132,6 +141,31 @@ function ScanPage() {
                     score={data.aiScore}
                     label="AI Score"
                     subtitle="LLM-assisted code fingerprints"
+                  />
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <ConfidencePill
+                    label={`Vibe confidence: ${data.confidence.vibe.label}`}
+                    detail={data.confidence.vibe.detail}
+                    tone={
+                      data.confidence.vibe.level === "high"
+                        ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+                        : data.confidence.vibe.level === "medium"
+                          ? "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-300"
+                          : "border-red-500/20 bg-red-500/5 text-red-700 dark:text-red-300"
+                    }
+                  />
+                  <ConfidencePill
+                    label={`AI confidence: ${data.confidence.ai.label}`}
+                    detail={data.confidence.ai.detail}
+                    tone={
+                      data.confidence.ai.level === "high"
+                        ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+                        : data.confidence.ai.level === "medium"
+                          ? "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-300"
+                          : "border-red-500/20 bg-red-500/5 text-red-700 dark:text-red-300"
+                    }
                   />
                 </div>
 
