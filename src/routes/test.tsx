@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueries } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { analyzeUrl } from "../lib/analyze.functions";
 import { TEST_SAMPLES, passes, scoreBucket } from "../lib/test-samples";
 import type { AnalysisResult, Signal } from "../lib/detectors/signals";
@@ -175,8 +175,8 @@ function TestPage() {
                 const aiOk = d && !d.error ? passes(d.aiScore, s.expectAi) : null;
                 const open = !!expanded[s.url];
                 return (
-                  <>
-                  <tr key={s.url} className="border-t border-border align-top">
+                  <Fragment key={s.url}>
+                  <tr className="border-t border-border align-top">
                     <td className="px-4 py-3">
                       <div className="font-medium">{s.label}</div>
                       <div className="text-xs text-muted-foreground">{s.note}</div>
@@ -258,7 +258,7 @@ function TestPage() {
                       </td>
                     </tr>
                   )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
