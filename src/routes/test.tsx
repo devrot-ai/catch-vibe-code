@@ -549,130 +549,17 @@ function TestPage() {
           </div>
         </div>
 
-        <div className="mt-8 rounded-lg border border-border bg-card p-4">
-          <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <FilterChip
-                active={filters.failedVibe}
-                onClick={() => setFilters((f) => ({ ...f, failedVibe: !f.failedVibe }))}
-              >
-                Failed Vibe
-              </FilterChip>
-              <FilterChip
-                active={filters.failedAi}
-                onClick={() => setFilters((f) => ({ ...f, failedAi: !f.failedAi }))}
-              >
-                Failed AI
-              </FilterChip>
-              <FilterChip
-                active={filters.lowConfidence}
-                onClick={() => setFilters((f) => ({ ...f, lowConfidence: !f.lowConfidence }))}
-              >
-                Low confidence / evidence
-              </FilterChip>
-              {anyFilter && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFilters({ failedVibe: false, failedAi: false, lowConfidence: false })
-                  }
-                  className="text-xs text-muted-foreground underline hover:text-foreground"
-                >
-                  clear
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <div>
-                Showing {filteredRows.length} of {results.length} fixtures
-                {anyFilter && filteredDone > 0 && (
-                  <span className="ml-2 text-foreground">
-                    filtered pass rate:{" "}
-                    {Math.round(((filteredVibePass + filteredAiPass) / (filteredDone * 2)) * 100)}%
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleExport}
-                className="rounded-full border border-border bg-card px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted/50"
-              >
-                Export CSV
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "sample"}
-                      direction={sortConfig.direction}
-                      label="Sample"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "sample"
-                            ? {
-                                key: "sample",
-                                direction: current.direction === "asc" ? "desc" : "asc",
-                              }
-                            : { key: "sample", direction: SORT_DEFAULT_DIRECTIONS.sample },
-                        )
-                      }
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "vibe"}
-                      direction={sortConfig.direction}
-                      label="Vibe likelihood"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "vibe"
-                            ? {
-                                key: "vibe",
-                                direction: current.direction === "asc" ? "desc" : "asc",
-                              }
-                            : { key: "vibe", direction: SORT_DEFAULT_DIRECTIONS.vibe },
-                        )
-                      }
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "ai"}
-                      direction={sortConfig.direction}
-                      label="AI risk"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "ai"
-                            ? { key: "ai", direction: current.direction === "asc" ? "desc" : "asc" }
-                            : { key: "ai", direction: SORT_DEFAULT_DIRECTIONS.ai },
-                        )
-                      }
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "confidence"}
-                      direction={sortConfig.direction}
-                      label="Confidence"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "confidence"
-                            ? {
-                                key: "confidence",
-                                direction: current.direction === "asc" ? "desc" : "asc",
-                              }
-                            : { key: "confidence", direction: SORT_DEFAULT_DIRECTIONS.confidence },
-                        )
-                      }
-                    />
-                  </th>
-                </tr>
-              </thead>
+        <div className="mt-8 space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="text-sm font-semibold">Run history</div>
+            <div className="mt-3 space-y-2">
+              {history.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                  No saved runs yet.
+                </div>
+              ) : (
+                history.map((run, index) => (
+                  <HistoryRow
                     key={run.id}
                     run={run}
                     active={run.id === activeRun?.id}
