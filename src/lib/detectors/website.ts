@@ -46,6 +46,7 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
       kind: "website",
       vibeScore: 0,
       aiScore: 0,
+      confidence: { vibe: scoreConfidence(0, 0), ai: scoreConfidence(0, 0) },
       signals: [],
       error: "Could not fetch page (blocked, timed out, or not HTML).",
     };
