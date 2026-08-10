@@ -275,6 +275,140 @@ function clampThresholds(next: BucketThresholds): BucketThresholds {
   };
 }
 
+export const DEFAULT_BUCKET_THRESHOLDS: BucketThresholds = { lowMax: 35, mediumMax: 65 };
+export const DEFAULT_CONFIDENCE_RULES: ConfidenceRules = { minSignals: 2, boundaryWindow: 5 };
+
+function ThresholdSlider({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  hint,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  hint?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-foreground">{label}</label>
+        <span className="rounded-full border border-border bg-background/60 px-2 py-0.5 font-mono text-xs text-foreground">
+          {value}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-2 w-full accent-primary"
+      />
+      {hint && <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
+
+function TuningPanel({
+  thresholds,
+  confidenceRules,
+  onThresholdsChange,
+  onConfidenceRulesChange,
+}: {
+  thresholds: BucketThresholds;
+  confidenceRules: ConfidenceRules;
+  onThresholdsChange: (next: BucketThresholds) => void;
+  onConfidenceRulesChange: (next: ConfidenceRules) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isDefault =
+    thresholds.lowMax === DEFAULT_BUCKET_THRESHOLDS.lowMax &&
+    thresholds.mediumMax === DEFAULT_BUCKET_THRESHOLDS.mediumMax &&
+    confidenceRules.minSignals === DEFAULT_CONFIDENCE_RULES.minSignals &&
+    confidenceRules.boundaryWindow === DEFAULT_CONFIDENCE_RULES.boundaryWindow;
+
+  return (
+    <div className="mt-8 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="text-sm font-semibold text-foreground"
+        >
+          Tuning {open ? "▾" : "▸"}
+        </button>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>
+            buckets {thresholds.lowMax}/{thresholds.mediumMax} · min signals{" "}
+            {confidenceRules.minSignals} · window ±{confidenceRules.boundaryWindow}
+          </span>
+          {!isDefault && (
+            <button
+              type="button"
+              onClick={() => {
+                onThresholdsChange(DEFAULT_BUCKET_THRESHOLDS);
+                onConfidenceRulesChange(DEFAULT_CONFIDENCE_RULES);
+              }}
+              className="underline hover:text-foreground"
+            >
+              Reset to defaults
+            </button>
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <ThresholdSlider
+            label="Low / medium boundary"
+            value={thresholds.lowMax}
+            min={0}
+            max={100}
+            hint="Scores at or above this land in the medium bucket."
+            onChange={(value) => onThresholdsChange(clampThresholds({ ...thresholds, lowMax: value }))}
+          />
+          <ThresholdSlider
+            label="Medium / high boundary"
+            value={thresholds.mediumMax}
+            min={0}
+            max={100}
+            hint="Scores at or above this land in the high bucket."
+            onChange={(value) =>
+              onThresholdsChange(clampThresholds({ ...thresholds, mediumMax: value }))
+            }
+          />
+          <ThresholdSlider
+            label="Minimum signals for confidence"
+            value={confidenceRules.minSignals}
+            min={0}
+            max={10}
+            hint="At or below this many signals, a category is flagged low confidence."
+            onChange={(value) => onConfidenceRulesChange({ ...confidenceRules, minSignals: value })}
+          />
+          <ThresholdSlider
+            label="Boundary window (points)"
+            value={confidenceRules.boundaryWindow}
+            min={0}
+            max={25}
+            hint="Scores this close to a bucket boundary are flagged low confidence."
+            onChange={(value) =>
+              onConfidenceRulesChange({ ...confidenceRules, boundaryWindow: value })
+            }
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export type FilterKey = "failedVibe" | "failedAi" | "lowConfidence";
 
 function FilterChip({
