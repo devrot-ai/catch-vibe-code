@@ -657,8 +657,16 @@ function TestPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Test mode</h1>
         <p className="mt-2 text-muted-foreground">
           Runs the analyzer against deterministic sample fixtures and checks each score against an
-          expected bucket (low &lt; 35, medium 35–64, high ≥ 65).
+          expected bucket (low &lt; {bucketThresholds.lowMax}, medium {bucketThresholds.lowMax}–
+          {bucketThresholds.mediumMax - 1}, high ≥ {bucketThresholds.mediumMax}).
         </p>
+
+        <TuningPanel
+          thresholds={bucketThresholds}
+          confidenceRules={confidenceRules}
+          onThresholdsChange={setBucketThresholds}
+          onConfidenceRulesChange={setConfidenceRules}
+        />
 
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-border bg-card p-4">
