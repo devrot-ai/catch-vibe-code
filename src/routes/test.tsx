@@ -766,7 +766,6 @@ function TestPage() {
               </tr>
             </thead>
             <tbody>
-            <tbody>
               {sortedRows.map((row) => {
                 const open = !!expanded[row.id];
                 return (
