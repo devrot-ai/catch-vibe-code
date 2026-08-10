@@ -28,3 +28,13 @@ All changes are confined to `src/routes/test.tsx`:
 - New `TuningPanel` component wired to `setBucketThresholds` / `setConfidenceRules`, routing threshold edits through `clampThresholds`.
 - Boundary sliders range 0–100 step 1; min-signals 0–10 step 1; boundary window 0–25 step 1.
 - Styling uses existing semantic tokens (`border-border`, `bg-card`, `text-muted-foreground`) to match the current page.
+
+## Build fix required first
+
+`src/routes/test.tsx` is currently broken and does not compile (JSX errors around lines 552-685 and 881). A duplicated filter bar and a duplicated table header were pasted into the run-history panel, leaving an orphaned `history.map(...)` fragment with no opening markup, and `<tbody>` is written twice.
+
+The fix, before adding tuning controls:
+
+- Replace the malformed block (the wrapper at line 552 through the stray `key={run.id}`) with the intended run-history panel: a `space-y-4` wrapper, a "Run history" card, an empty state, and `history.map((run, index) => <HistoryRow run active previous={history[index + 1]} onClick=... />)` so the existing closing tags line up.
+- Remove the duplicate `<tbody>` opening tag.
+- Keep the single filter bar and single results table that already exist further down the file.
