@@ -561,14 +561,12 @@ function TestPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "ai", direction: "desc" });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [bucketThresholds, setBucketThresholds] = useState<BucketThresholds>({
-    lowMax: 35,
-    mediumMax: 65,
-  });
-  const [confidenceRules, setConfidenceRules] = useState<ConfidenceRules>({
-    minSignals: 2,
-    boundaryWindow: 5,
-  });
+  const [bucketThresholds, setBucketThresholds] = useState<BucketThresholds>(
+    DEFAULT_BUCKET_THRESHOLDS,
+  );
+  const [confidenceRules, setConfidenceRules] = useState<ConfidenceRules>(
+    DEFAULT_CONFIDENCE_RULES,
+  );
   const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
     failedVibe: false,
     failedAi: false,
