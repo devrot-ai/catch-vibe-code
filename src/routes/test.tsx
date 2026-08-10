@@ -275,6 +275,140 @@ function clampThresholds(next: BucketThresholds): BucketThresholds {
   };
 }
 
+export const DEFAULT_BUCKET_THRESHOLDS: BucketThresholds = { lowMax: 35, mediumMax: 65 };
+export const DEFAULT_CONFIDENCE_RULES: ConfidenceRules = { minSignals: 2, boundaryWindow: 5 };
+
+function ThresholdSlider({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  hint,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  hint?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-foreground">{label}</label>
+        <span className="rounded-full border border-border bg-background/60 px-2 py-0.5 font-mono text-xs text-foreground">
+          {value}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-2 w-full accent-primary"
+      />
+      {hint && <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
+
+function TuningPanel({
+  thresholds,
+  confidenceRules,
+  onThresholdsChange,
+  onConfidenceRulesChange,
+}: {
+  thresholds: BucketThresholds;
+  confidenceRules: ConfidenceRules;
+  onThresholdsChange: (next: BucketThresholds) => void;
+  onConfidenceRulesChange: (next: ConfidenceRules) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isDefault =
+    thresholds.lowMax === DEFAULT_BUCKET_THRESHOLDS.lowMax &&
+    thresholds.mediumMax === DEFAULT_BUCKET_THRESHOLDS.mediumMax &&
+    confidenceRules.minSignals === DEFAULT_CONFIDENCE_RULES.minSignals &&
+    confidenceRules.boundaryWindow === DEFAULT_CONFIDENCE_RULES.boundaryWindow;
+
+  return (
+    <div className="mt-8 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="text-sm font-semibold text-foreground"
+        >
+          Tuning {open ? "▾" : "▸"}
+        </button>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>
+            buckets {thresholds.lowMax}/{thresholds.mediumMax} · min signals{" "}
+            {confidenceRules.minSignals} · window ±{confidenceRules.boundaryWindow}
+          </span>
+          {!isDefault && (
+            <button
+              type="button"
+              onClick={() => {
+                onThresholdsChange(DEFAULT_BUCKET_THRESHOLDS);
+                onConfidenceRulesChange(DEFAULT_CONFIDENCE_RULES);
+              }}
+              className="underline hover:text-foreground"
+            >
+              Reset to defaults
+            </button>
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <ThresholdSlider
+            label="Low / medium boundary"
+            value={thresholds.lowMax}
+            min={0}
+            max={100}
+            hint="Scores at or above this land in the medium bucket."
+            onChange={(value) => onThresholdsChange(clampThresholds({ ...thresholds, lowMax: value }))}
+          />
+          <ThresholdSlider
+            label="Medium / high boundary"
+            value={thresholds.mediumMax}
+            min={0}
+            max={100}
+            hint="Scores at or above this land in the high bucket."
+            onChange={(value) =>
+              onThresholdsChange(clampThresholds({ ...thresholds, mediumMax: value }))
+            }
+          />
+          <ThresholdSlider
+            label="Minimum signals for confidence"
+            value={confidenceRules.minSignals}
+            min={0}
+            max={10}
+            hint="At or below this many signals, a category is flagged low confidence."
+            onChange={(value) => onConfidenceRulesChange({ ...confidenceRules, minSignals: value })}
+          />
+          <ThresholdSlider
+            label="Boundary window (points)"
+            value={confidenceRules.boundaryWindow}
+            min={0}
+            max={25}
+            hint="Scores this close to a bucket boundary are flagged low confidence."
+            onChange={(value) =>
+              onConfidenceRulesChange({ ...confidenceRules, boundaryWindow: value })
+            }
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export type FilterKey = "failedVibe" | "failedAi" | "lowConfidence";
 
 function FilterChip({
@@ -427,14 +561,12 @@ function TestPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "ai", direction: "desc" });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [bucketThresholds, setBucketThresholds] = useState<BucketThresholds>({
-    lowMax: 35,
-    mediumMax: 65,
-  });
-  const [confidenceRules, setConfidenceRules] = useState<ConfidenceRules>({
-    minSignals: 2,
-    boundaryWindow: 5,
-  });
+  const [bucketThresholds, setBucketThresholds] = useState<BucketThresholds>(
+    DEFAULT_BUCKET_THRESHOLDS,
+  );
+  const [confidenceRules, setConfidenceRules] = useState<ConfidenceRules>(
+    DEFAULT_CONFIDENCE_RULES,
+  );
   const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
     failedVibe: false,
     failedAi: false,
@@ -525,8 +657,16 @@ function TestPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Test mode</h1>
         <p className="mt-2 text-muted-foreground">
           Runs the analyzer against deterministic sample fixtures and checks each score against an
-          expected bucket (low &lt; 35, medium 35–64, high ≥ 65).
+          expected bucket (low &lt; {bucketThresholds.lowMax}, medium {bucketThresholds.lowMax}–
+          {bucketThresholds.mediumMax - 1}, high ≥ {bucketThresholds.mediumMax}).
         </p>
+
+        <TuningPanel
+          thresholds={bucketThresholds}
+          confidenceRules={confidenceRules}
+          onThresholdsChange={setBucketThresholds}
+          onConfidenceRulesChange={setConfidenceRules}
+        />
 
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-border bg-card p-4">
@@ -549,130 +689,17 @@ function TestPage() {
           </div>
         </div>
 
-        <div className="mt-8 rounded-lg border border-border bg-card p-4">
-          <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <FilterChip
-                active={filters.failedVibe}
-                onClick={() => setFilters((f) => ({ ...f, failedVibe: !f.failedVibe }))}
-              >
-                Failed Vibe
-              </FilterChip>
-              <FilterChip
-                active={filters.failedAi}
-                onClick={() => setFilters((f) => ({ ...f, failedAi: !f.failedAi }))}
-              >
-                Failed AI
-              </FilterChip>
-              <FilterChip
-                active={filters.lowConfidence}
-                onClick={() => setFilters((f) => ({ ...f, lowConfidence: !f.lowConfidence }))}
-              >
-                Low confidence / evidence
-              </FilterChip>
-              {anyFilter && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFilters({ failedVibe: false, failedAi: false, lowConfidence: false })
-                  }
-                  className="text-xs text-muted-foreground underline hover:text-foreground"
-                >
-                  clear
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <div>
-                Showing {filteredRows.length} of {results.length} fixtures
-                {anyFilter && filteredDone > 0 && (
-                  <span className="ml-2 text-foreground">
-                    filtered pass rate:{" "}
-                    {Math.round(((filteredVibePass + filteredAiPass) / (filteredDone * 2)) * 100)}%
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleExport}
-                className="rounded-full border border-border bg-card px-3 py-1 font-medium text-foreground transition-colors hover:bg-muted/50"
-              >
-                Export CSV
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "sample"}
-                      direction={sortConfig.direction}
-                      label="Sample"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "sample"
-                            ? {
-                                key: "sample",
-                                direction: current.direction === "asc" ? "desc" : "asc",
-                              }
-                            : { key: "sample", direction: SORT_DEFAULT_DIRECTIONS.sample },
-                        )
-                      }
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "vibe"}
-                      direction={sortConfig.direction}
-                      label="Vibe likelihood"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "vibe"
-                            ? {
-                                key: "vibe",
-                                direction: current.direction === "asc" ? "desc" : "asc",
-                              }
-                            : { key: "vibe", direction: SORT_DEFAULT_DIRECTIONS.vibe },
-                        )
-                      }
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "ai"}
-                      direction={sortConfig.direction}
-                      label="AI risk"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "ai"
-                            ? { key: "ai", direction: current.direction === "asc" ? "desc" : "asc" }
-                            : { key: "ai", direction: SORT_DEFAULT_DIRECTIONS.ai },
-                        )
-                      }
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left">
-                    <SortHeader
-                      active={sortConfig.key === "confidence"}
-                      direction={sortConfig.direction}
-                      label="Confidence"
-                      onClick={() =>
-                        setSortConfig((current) =>
-                          current.key === "confidence"
-                            ? {
-                                key: "confidence",
-                                direction: current.direction === "asc" ? "desc" : "asc",
-                              }
-                            : { key: "confidence", direction: SORT_DEFAULT_DIRECTIONS.confidence },
-                        )
-                      }
-                    />
-                  </th>
-                </tr>
-              </thead>
+        <div className="mt-8 space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="text-sm font-semibold">Run history</div>
+            <div className="mt-3 space-y-2">
+              {history.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                  No saved runs yet.
+                </div>
+              ) : (
+                history.map((run, index) => (
+                  <HistoryRow
                     key={run.id}
                     run={run}
                     active={run.id === activeRun?.id}
@@ -878,7 +905,6 @@ function TestPage() {
                 </th>
               </tr>
             </thead>
-            <tbody>
             <tbody>
               {sortedRows.map((row) => {
                 const open = !!expanded[row.id];

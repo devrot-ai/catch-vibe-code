@@ -1,4 +1,11 @@
-import { type AnalysisResult, type Signal, scoreFromSignals, scoreConfidence } from "./signals";
+import {
+  type AnalysisResult,
+  type Signal,
+  scoreFromSignals,
+  scoreConfidence,
+  detectTailwindClassDensity,
+  detectCssVariables,
+} from "./signals";
 import { runSignalRules } from "./rule-engine";
 import {
   createAiToolingRules,
@@ -70,6 +77,7 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
       kind: "github",
       vibeScore: 0,
       aiScore: 0,
+      confidence: { vibe: scoreConfidence(0, 0), ai: scoreConfidence(0, 0) },
       signals: [],
       error: "GitHub connector not configured on the server.",
     };
@@ -88,6 +96,7 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
       kind: "github",
       vibeScore: 0,
       aiScore: 0,
+      confidence: { vibe: scoreConfidence(0, 0), ai: scoreConfidence(0, 0) },
       signals: [],
       error: "Could not fetch repository (private, not found, or rate-limited).",
     };
