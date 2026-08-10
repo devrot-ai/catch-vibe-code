@@ -278,6 +278,52 @@ function clampThresholds(next: BucketThresholds): BucketThresholds {
 export const DEFAULT_BUCKET_THRESHOLDS: BucketThresholds = { lowMax: 35, mediumMax: 65 };
 export const DEFAULT_CONFIDENCE_RULES: ConfidenceRules = { minSignals: 2, boundaryWindow: 5 };
 
+const PRESETS = [
+  {
+    key: "strict",
+    label: "Strict",
+    thresholds: { lowMax: 50, mediumMax: 80 } as BucketThresholds,
+    confidenceRules: { minSignals: 4, boundaryWindow: 8 } as ConfidenceRules,
+  },
+  {
+    key: "balanced",
+    label: "Balanced",
+    thresholds: DEFAULT_BUCKET_THRESHOLDS,
+    confidenceRules: DEFAULT_CONFIDENCE_RULES,
+  },
+  {
+    key: "lenient",
+    label: "Lenient",
+    thresholds: { lowMax: 20, mediumMax: 50 } as BucketThresholds,
+    confidenceRules: { minSignals: 1, boundaryWindow: 3 } as ConfidenceRules,
+  },
+];
+
+function PresetChip({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-card text-muted-foreground hover:text-foreground"
+      }`}
+      aria-pressed={active}
+    >
+      {label}
+    </button>
+  );
+}
+
 function ThresholdSlider({
   label,
   value,
@@ -335,6 +381,14 @@ function TuningPanel({
     confidenceRules.minSignals === DEFAULT_CONFIDENCE_RULES.minSignals &&
     confidenceRules.boundaryWindow === DEFAULT_CONFIDENCE_RULES.boundaryWindow;
 
+  const activePreset = PRESETS.find(
+    (preset) =>
+      thresholds.lowMax === preset.thresholds.lowMax &&
+      thresholds.mediumMax === preset.thresholds.mediumMax &&
+      confidenceRules.minSignals === preset.confidenceRules.minSignals &&
+      confidenceRules.boundaryWindow === preset.confidenceRules.boundaryWindow,
+  );
+
   return (
     <div className="mt-8 rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -363,6 +417,21 @@ function TuningPanel({
             </button>
           )}
         </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Presets:</span>
+        {PRESETS.map((preset) => (
+          <PresetChip
+            key={preset.key}
+            active={activePreset?.key === preset.key}
+            label={preset.label}
+            onClick={() => {
+              onThresholdsChange(clampThresholds(preset.thresholds));
+              onConfidenceRulesChange(preset.confidenceRules);
+            }}
+          />
+        ))}
       </div>
 
       {open && (
@@ -408,6 +477,7 @@ function TuningPanel({
     </div>
   );
 }
+
 
 export type FilterKey = "failedVibe" | "failedAi" | "lowConfidence";
 
