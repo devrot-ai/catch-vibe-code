@@ -33,6 +33,24 @@ async function fetchDoc(url: string, maxBytes = 2_500_000): Promise<Fetched | nu
   }
 }
 
+/** Some sites block server-side fetches; fall back to a rendered-HTML proxy. */
+async function fetchPage(url: string): Promise<Fetched | null> {
+  const direct = await fetchDoc(url);
+  if (direct) return direct;
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { "X-Return-Format": "html" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text || text.length < 200) return null;
+    return { text, headers: res.headers };
+  } catch {
+    return null;
+  }
+}
+
 function absolutize(href: string, base: string): string | null {
   try {
     return new URL(href, base).toString();
