@@ -82,7 +82,7 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
   const target = inputUrl;
   const coverage: Coverage = emptyCoverage();
   coverage.sourcesAttempted += 1;
-  const doc = await fetchDoc(inputUrl);
+  const doc = await fetchPage(inputUrl);
 
   if (!doc) {
     return {
