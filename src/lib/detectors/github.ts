@@ -501,7 +501,10 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
       firstSha = commits[commits.length - 1].sha;
     }
 
-    if (firstSha) {
+    // A big first commit only means "code dump" on a young, short-history repo —
+    // long-lived projects (or imported history) legitimately start huge.
+    const youngRepo = totalCommits <= 60;
+    if (firstSha && youngRepo) {
       const stat = await api.json<{ stats?: { additions?: number } }>(
         `/repos/${owner}/${repo}/commits/${firstSha}`,
       );
@@ -512,11 +515,12 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
           category: "ai",
           label: "Large initial commit (code dump)",
           weight: adds > 5000 ? 16 : 11,
-          evidence: `The first commit added ${adds.toLocaleString()} lines in one go.`,
+          evidence: `The first commit added ${adds.toLocaleString()} lines in one go, on a repo with only ${totalCommits} commits.`,
           sourceRef: firstSha.slice(0, 7),
         });
       }
     }
+
 
     // Lots of code, almost no history.
     if (totalCommits > 0 && totalCommits <= 15 && paths.length >= 40) {
