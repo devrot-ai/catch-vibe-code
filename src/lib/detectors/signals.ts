@@ -24,9 +24,11 @@ export interface AnalysisResult {
   aiScore: number;
   confidence: { vibe: ScoreConfidence; ai: ScoreConfidence };
   signals: Signal[];
+  coverage?: { sourcesRead: number; sourcesAttempted: number; notes: string[] };
   meta?: { description?: string | null; stars?: number; branch?: string };
   error?: string;
 }
+
 
 export function scoreFromSignals(signals: Signal[]): { vibe: number; ai: number } {
   let vibe = 0;
@@ -143,5 +145,108 @@ export function detectEmojiHeaders(text: string, source: string): Signal | null 
     label: "Emoji-decorated markdown headers",
     weight: 5,
     evidence: `${emojiHeader.length} markdown headers start with emoji in ${source}.`,
+  };
+}
+
+// ---------- Source-code prose / comment detectors ----------
+
+const COMMENT_RE = /(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\})/g;
+
+export function extractComments(text: string): string[] {
+  return text.match(COMMENT_RE) ?? [];
+}
+
+/** Comments that narrate the obvious next line — a strong LLM tell. */
+export function detectNarratingComments(text: string, source: string): Signal | null {
+  const comments = extractComments(text);
+  if (comments.length === 0) return null;
+  const patterns = [
+    /\/\/\s*(?:import|define|create|initialize|set up|setup|render|return|handle|update|fetch|check|loop through|map over|state for)\b/i,
+    /\/\/\s*(?:this|the)\s+(?:function|component|hook|variable|constant)\s+(?:will|is|does)\b/i,
+    /\/\*+\s*(?:={3,}|-{3,})/,
+  ];
+  const hits = comments.filter((c) => patterns.some((p) => p.test(c)));
+  if (hits.length < 3) return null;
+  return {
+    id: "ai.narrating_comments",
+    category: "ai",
+    label: "Comments narrating obvious code",
+    weight: Math.min(14, 3 + hits.length),
+    evidence: `${hits.length} explanatory comments in ${source}, e.g. ${hits
+      .slice(0, 2)
+      .map((c) => `"${c.trim().slice(0, 60)}"`)
+      .join(", ")}`,
+    sourceRef: source,
+  };
+}
+
+/** Big banner comments splitting a file into labelled sections. */
+export function detectSectionBanners(text: string, source: string): Signal | null {
+  const banners = text.match(/(?:\/\/|\{\/\*|\/\*)\s*[-=*]{3,}[^\n]*\n?|\{\/\*\s*[A-Z][A-Za-z ]{3,30}\s*\*\/\}/g);
+  if (!banners || banners.length < 3) return null;
+  return {
+    id: "ai.section_banners",
+    category: "ai",
+    label: "Section banner comments",
+    weight: Math.min(10, banners.length * 2),
+    evidence: `${banners.length} decorative section banners in ${source}.`,
+    sourceRef: source,
+  };
+}
+
+export function detectPlaceholders(text: string, source: string): Signal | null {
+  const hits = text.match(
+    /\/\/\s*(?:TODO|FIXME)\s*:?\s*(?:implement|add|replace with|hook up|wire up|your)\b[^\n]*/gi,
+  );
+  if (!hits || hits.length < 2) return null;
+  return {
+    id: "ai.placeholders",
+    category: "ai",
+    label: "Unfinished scaffold placeholders",
+    weight: Math.min(10, hits.length * 3),
+    evidence: `${hits.length} placeholder TODOs in ${source}, e.g. "${hits[0].trim().slice(0, 70)}"`,
+    sourceRef: source,
+  };
+}
+
+/** Tailwind arbitrary values like w-[420px] — common in generated UI. */
+export function detectArbitraryValues(text: string, source: string): Signal | null {
+  const hits = text.match(/\b[a-z-]+-\[[^\]\s"']+\]/g);
+  if (!hits || hits.length < 4) return null;
+  return {
+    id: "vibe.tailwind_arbitrary",
+    category: "vibe",
+    label: "Tailwind arbitrary values",
+    weight: Math.min(8, Math.round(hits.length / 2)),
+    evidence: `${hits.length} arbitrary-value utilities in ${source}, e.g. ${hits.slice(0, 3).join(" ")}`,
+    sourceRef: source,
+  };
+}
+
+/** HSL design tokens (`--primary: 222 47% 11%`) — the shadcn theming convention. */
+export function detectHslTokens(text: string, source: string): Signal | null {
+  const hits = text.match(/--[a-z-]+:\s*\d{1,3}(?:\.\d+)?\s+\d{1,3}(?:\.\d+)?%\s+\d{1,3}(?:\.\d+)?%/gi);
+  if (!hits || hits.length < 4) return null;
+  return {
+    id: "vibe.hsl_tokens",
+    category: "vibe",
+    label: "shadcn-style HSL design tokens",
+    weight: Math.min(14, 6 + hits.length),
+    evidence: `${hits.length} raw-HSL theme tokens in ${source}.`,
+    sourceRef: source,
+  };
+}
+
+export function detectCnHelper(text: string, source: string): Signal | null {
+  if (!/\bcn\(/.test(text) || !/(class-variance-authority|cva\(|clsx|tailwind-merge|twMerge)/.test(text)) {
+    return null;
+  }
+  return {
+    id: "vibe.cn_helper",
+    category: "vibe",
+    label: "cn() + cva class-composition convention",
+    weight: 10,
+    evidence: `${source} uses the cn()/cva class-composition pattern popularised by shadcn/ui.`,
+    sourceRef: source,
   };
 }
