@@ -9,6 +9,13 @@ import {
   type TestRunSnapshot,
   writeTestRunHistory,
 } from "../lib/test-history";
+import {
+  makePresetId,
+  readCustomPresets,
+  writeCustomPresets,
+  type StoredPreset,
+} from "../lib/test-presets";
+
 
 export const Route = createFileRoute("/test")({
   head: () => ({
@@ -375,19 +382,52 @@ function TuningPanel({
   onConfidenceRulesChange: (next: ConfidenceRules) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [customPresets, setCustomPresets] = useState<StoredPreset[]>([]);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
+
+  useEffect(() => {
+    setCustomPresets(readCustomPresets());
+  }, []);
+
   const isDefault =
     thresholds.lowMax === DEFAULT_BUCKET_THRESHOLDS.lowMax &&
     thresholds.mediumMax === DEFAULT_BUCKET_THRESHOLDS.mediumMax &&
     confidenceRules.minSignals === DEFAULT_CONFIDENCE_RULES.minSignals &&
     confidenceRules.boundaryWindow === DEFAULT_CONFIDENCE_RULES.boundaryWindow;
 
-  const activePreset = PRESETS.find(
-    (preset) =>
-      thresholds.lowMax === preset.thresholds.lowMax &&
-      thresholds.mediumMax === preset.thresholds.mediumMax &&
-      confidenceRules.minSignals === preset.confidenceRules.minSignals &&
-      confidenceRules.boundaryWindow === preset.confidenceRules.boundaryWindow,
-  );
+  const matches = (preset: {
+    thresholds: BucketThresholds;
+    confidenceRules: ConfidenceRules;
+  }) =>
+    thresholds.lowMax === preset.thresholds.lowMax &&
+    thresholds.mediumMax === preset.thresholds.mediumMax &&
+    confidenceRules.minSignals === preset.confidenceRules.minSignals &&
+    confidenceRules.boundaryWindow === preset.confidenceRules.boundaryWindow;
+
+  const activePreset = PRESETS.find(matches);
+  const activeCustomPreset = customPresets.find(matches);
+
+  const saveCurrentAsPreset = () => {
+    const name = presetName.trim();
+    if (!name) return;
+    const existing = customPresets.find(
+      (preset) => preset.name.toLowerCase() === name.toLowerCase(),
+    );
+    const next = existing
+      ? customPresets.map((preset) =>
+          preset.id === existing.id ? { ...preset, thresholds, confidenceRules } : preset,
+        )
+      : [...customPresets, { id: makePresetId(), name, thresholds, confidenceRules }];
+    setCustomPresets(writeCustomPresets(next));
+    setPresetName("");
+    setSaveOpen(false);
+  };
+
+  const deletePreset = (id: string) => {
+    setCustomPresets(writeCustomPresets(customPresets.filter((preset) => preset.id !== id)));
+  };
+
 
   return (
     <div className="mt-8 rounded-lg border border-border bg-card p-4">
@@ -432,7 +472,71 @@ function TuningPanel({
             }}
           />
         ))}
+        {customPresets.map((preset) => (
+          <span key={preset.id} className="inline-flex items-center gap-1">
+            <PresetChip
+              active={activeCustomPreset?.id === preset.id}
+              label={preset.name}
+              onClick={() => {
+                onThresholdsChange(clampThresholds(preset.thresholds));
+                onConfidenceRulesChange(preset.confidenceRules);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => deletePreset(preset.id)}
+              aria-label={`Delete preset ${preset.name}`}
+              className="text-xs text-muted-foreground hover:text-destructive"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {saveOpen ? (
+          <span className="inline-flex items-center gap-1">
+            <input
+              autoFocus
+              value={presetName}
+              onChange={(event) => setPresetName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") saveCurrentAsPreset();
+                if (event.key === "Escape") {
+                  setSaveOpen(false);
+                  setPresetName("");
+                }
+              }}
+              placeholder="Preset name"
+              className="w-32 rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground outline-none focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={saveCurrentAsPreset}
+              className="rounded-full border border-primary bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSaveOpen(false);
+                setPresetName("");
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSaveOpen(true)}
+            className="rounded-full border border-dashed border-border px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            + Save current
+          </button>
+        )}
       </div>
+
 
       {open && (
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
