@@ -375,19 +375,52 @@ function TuningPanel({
   onConfidenceRulesChange: (next: ConfidenceRules) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [customPresets, setCustomPresets] = useState<StoredPreset[]>([]);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
+
+  useEffect(() => {
+    setCustomPresets(readCustomPresets());
+  }, []);
+
   const isDefault =
     thresholds.lowMax === DEFAULT_BUCKET_THRESHOLDS.lowMax &&
     thresholds.mediumMax === DEFAULT_BUCKET_THRESHOLDS.mediumMax &&
     confidenceRules.minSignals === DEFAULT_CONFIDENCE_RULES.minSignals &&
     confidenceRules.boundaryWindow === DEFAULT_CONFIDENCE_RULES.boundaryWindow;
 
-  const activePreset = PRESETS.find(
-    (preset) =>
-      thresholds.lowMax === preset.thresholds.lowMax &&
-      thresholds.mediumMax === preset.thresholds.mediumMax &&
-      confidenceRules.minSignals === preset.confidenceRules.minSignals &&
-      confidenceRules.boundaryWindow === preset.confidenceRules.boundaryWindow,
-  );
+  const matches = (preset: {
+    thresholds: BucketThresholds;
+    confidenceRules: ConfidenceRules;
+  }) =>
+    thresholds.lowMax === preset.thresholds.lowMax &&
+    thresholds.mediumMax === preset.thresholds.mediumMax &&
+    confidenceRules.minSignals === preset.confidenceRules.minSignals &&
+    confidenceRules.boundaryWindow === preset.confidenceRules.boundaryWindow;
+
+  const activePreset = PRESETS.find(matches);
+  const activeCustomPreset = customPresets.find(matches);
+
+  const saveCurrentAsPreset = () => {
+    const name = presetName.trim();
+    if (!name) return;
+    const existing = customPresets.find(
+      (preset) => preset.name.toLowerCase() === name.toLowerCase(),
+    );
+    const next = existing
+      ? customPresets.map((preset) =>
+          preset.id === existing.id ? { ...preset, thresholds, confidenceRules } : preset,
+        )
+      : [...customPresets, { id: makePresetId(), name, thresholds, confidenceRules }];
+    setCustomPresets(writeCustomPresets(next));
+    setPresetName("");
+    setSaveOpen(false);
+  };
+
+  const deletePreset = (id: string) => {
+    setCustomPresets(writeCustomPresets(customPresets.filter((preset) => preset.id !== id)));
+  };
+
 
   return (
     <div className="mt-8 rounded-lg border border-border bg-card p-4">
