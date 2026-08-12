@@ -472,7 +472,71 @@ function TuningPanel({
             }}
           />
         ))}
+        {customPresets.map((preset) => (
+          <span key={preset.id} className="inline-flex items-center gap-1">
+            <PresetChip
+              active={activeCustomPreset?.id === preset.id}
+              label={preset.name}
+              onClick={() => {
+                onThresholdsChange(clampThresholds(preset.thresholds));
+                onConfidenceRulesChange(preset.confidenceRules);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => deletePreset(preset.id)}
+              aria-label={`Delete preset ${preset.name}`}
+              className="text-xs text-muted-foreground hover:text-destructive"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {saveOpen ? (
+          <span className="inline-flex items-center gap-1">
+            <input
+              autoFocus
+              value={presetName}
+              onChange={(event) => setPresetName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") saveCurrentAsPreset();
+                if (event.key === "Escape") {
+                  setSaveOpen(false);
+                  setPresetName("");
+                }
+              }}
+              placeholder="Preset name"
+              className="w-32 rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground outline-none focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={saveCurrentAsPreset}
+              className="rounded-full border border-primary bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSaveOpen(false);
+                setPresetName("");
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSaveOpen(true)}
+            className="rounded-full border border-dashed border-border px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            + Save current
+          </button>
+        )}
       </div>
+
 
       {open && (
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
