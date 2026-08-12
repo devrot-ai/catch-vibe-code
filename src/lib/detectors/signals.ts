@@ -24,9 +24,11 @@ export interface AnalysisResult {
   aiScore: number;
   confidence: { vibe: ScoreConfidence; ai: ScoreConfidence };
   signals: Signal[];
+  coverage?: { sourcesRead: number; sourcesAttempted: number; notes: string[] };
   meta?: { description?: string | null; stars?: number; branch?: string };
   error?: string;
 }
+
 
 export function scoreFromSignals(signals: Signal[]): { vibe: number; ai: number } {
   let vibe = 0;
