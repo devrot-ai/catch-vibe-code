@@ -9,6 +9,13 @@ import {
   type TestRunSnapshot,
   writeTestRunHistory,
 } from "../lib/test-history";
+import {
+  makePresetId,
+  readCustomPresets,
+  writeCustomPresets,
+  type StoredPreset,
+} from "../lib/test-presets";
+
 
 export const Route = createFileRoute("/test")({
   head: () => ({
