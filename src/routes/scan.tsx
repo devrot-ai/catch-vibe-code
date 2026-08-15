@@ -61,22 +61,62 @@ function Gauge({ score, label, subtitle }: { score: number; label: string; subti
   );
 }
 
-function SignalRow({ s }: { s: Signal }) {
+function Breakdown({
+  title,
+  score,
+  signals,
+}: {
+  title: string;
+  score: number;
+  signals: Signal[];
+}) {
+  const sorted = signals.slice().sort((a, b) => b.weight - a.weight);
+  const raw = sorted.reduce((a, b) => a + b.weight, 0);
+  const max = Math.max(1, ...sorted.map((s) => s.weight));
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-border py-3 last:border-0">
-      <div className="flex-1">
-        <div className="text-sm font-medium">{s.label}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{s.evidence}</div>
-        {s.sourceRef && (
-          <div className="mt-1 text-[11px] font-mono text-muted-foreground/80">{s.sourceRef}</div>
-        )}
+    <div className="rounded-lg border border-border bg-card p-6">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {title}
+        </h2>
+        <span className="font-mono text-xs text-muted-foreground">{score}</span>
       </div>
-      <div className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-        +{s.weight}
+      {sorted.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No signals fired — score stays at 0, which reads as low.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {sorted.map((s) => (
+            <li key={s.id}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">{s.label}</span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  +{s.weight} · {raw > 0 ? Math.round((s.weight / raw) * 100) : 0}%
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-foreground/60"
+                  style={{ width: `${Math.round((s.weight / max) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{s.evidence}</p>
+              {s.sourceRef && (
+                <p className="text-[11px] font-mono text-muted-foreground/70">{s.sourceRef}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
+        {raw} raw weight → normalized score {score} · {sorted.length} signal
+        {sorted.length === 1 ? "" : "s"}
       </div>
     </div>
   );
 }
+
 
 function ConfidencePill({ label, detail, tone }: { label: string; detail: string; tone: string }) {
   return (
