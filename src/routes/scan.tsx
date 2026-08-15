@@ -254,7 +254,26 @@ function ScanPage() {
           <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
             ← New scan
           </Link>
-          <div className="text-xs font-mono text-muted-foreground truncate max-w-md">{url}</div>
+          <div className="flex items-center gap-4">
+            <div className="text-xs font-mono text-muted-foreground truncate max-w-xs">{url}</div>
+            <button
+              type="button"
+              onClick={rescan}
+              disabled={isFetching}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            >
+              {isFetching ? "Rescanning…" : "Rescan & compare"}
+            </button>
+            {baseline && (
+              <button
+                type="button"
+                onClick={() => setBaseline(null)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear comparison
+              </button>
+            )}
+          </div>
         </div>
 
         {isFetching && (
