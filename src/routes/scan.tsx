@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { z } from "zod";
 import { analyzeUrl } from "../lib/analyze.functions";
-import type { Signal } from "../lib/detectors/signals";
+import type { AnalysisResult, Signal } from "../lib/detectors/signals";
 
 const searchSchema = z.object({ url: z.string().min(1) });
 
