@@ -137,6 +137,7 @@ function ScanPage() {
   const { url } = Route.useSearch();
   const analyze = useServerFn(analyzeUrl);
   const [baseline, setBaseline] = useState<AnalysisResult | null>(null);
+  const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
 
   const { data, isFetching, error, refetch } = useQuery({
     queryKey: ["scan", url],
@@ -147,8 +148,23 @@ function ScanPage() {
 
   const rescan = async () => {
     if (data && !data.error) setBaseline(data);
+    setShareState("idle");
     await refetch();
   };
+
+  const shareComparison = async () => {
+    if (!baseline || !data || data.error) return;
+    const link = `${window.location.origin}/compare?d=${encodeCompare(baseline, data)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setShareState("copied");
+    } catch {
+      window.prompt("Copy this comparison link:", link);
+      setShareState("failed");
+    }
+    setTimeout(() => setShareState("idle"), 2500);
+  };
+
 
   const vibeSignals = data?.signals.filter((s: Signal) => s.category === "vibe") ?? [];
   const aiSignals = data?.signals.filter((s: Signal) => s.category === "ai") ?? [];
