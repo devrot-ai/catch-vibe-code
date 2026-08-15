@@ -186,6 +186,19 @@ function ScanPage() {
             >
               {isFetching ? "Rescanning…" : "Rescan & compare"}
             </button>
+            {baseline && data && !data.error && (
+              <button
+                type="button"
+                onClick={shareComparison}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                {shareState === "copied"
+                  ? "Link copied"
+                  : shareState === "failed"
+                    ? "Copy manually"
+                    : "Share comparison"}
+              </button>
+            )}
             {baseline && (
               <button
                 type="button"
@@ -195,6 +208,7 @@ function ScanPage() {
                 Clear comparison
               </button>
             )}
+
           </div>
         </div>
 
