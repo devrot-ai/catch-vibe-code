@@ -209,28 +209,25 @@ function ScanPage() {
                   />
                 </div>
 
+                {data.coverage && (
+                  <div className="mt-4 rounded-lg border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Evidence coverage:</span>{" "}
+                    read {data.coverage.sourcesRead} of {data.coverage.sourcesAttempted} sources
+                    {data.coverage.notes.length > 0 && (
+                      <ul className="mt-2 list-disc space-y-1 pl-4">
+                        {data.coverage.notes.map((n) => (
+                          <li key={n}>{n}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
                 <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <div className="rounded-lg border border-border bg-card p-6">
-                    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                      Vibe evidence
-                    </h2>
-                    {vibeSignals.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No vibe signals detected.</div>
-                    ) : (
-                      vibeSignals.map((s) => <SignalRow key={s.id} s={s} />)
-                    )}
-                  </div>
-                  <div className="rounded-lg border border-border bg-card p-6">
-                    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                      AI evidence
-                    </h2>
-                    {aiSignals.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No AI signals detected.</div>
-                    ) : (
-                      aiSignals.map((s) => <SignalRow key={s.id} s={s} />)
-                    )}
-                  </div>
+                  <Breakdown title="Vibe evidence" score={data.vibeScore} signals={vibeSignals} />
+                  <Breakdown title="AI evidence" score={data.aiScore} signals={aiSignals} />
                 </div>
+
 
                 <div className="mt-6 text-xs text-muted-foreground">
                   Kind: {data.kind} · Target: {data.target}
