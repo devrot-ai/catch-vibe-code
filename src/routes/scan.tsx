@@ -353,6 +353,7 @@ function ScanPage() {
                   <Breakdown title="AI evidence" score={data.aiScore} signals={aiSignals} />
                 </div>
 
+                {baseline && <CompareView baseline={baseline} current={data} />}
 
                 <div className="mt-6 text-xs text-muted-foreground">
                   Kind: {data.kind} · Target: {data.target}
