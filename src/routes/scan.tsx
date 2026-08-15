@@ -5,6 +5,8 @@ import { useState } from "react";
 import { z } from "zod";
 import { analyzeUrl } from "../lib/analyze.functions";
 import type { AnalysisResult, Signal } from "../lib/detectors/signals";
+import { CompareView } from "../components/compare-view";
+import { encodeCompare } from "../lib/share-link";
 
 const searchSchema = z.object({ url: z.string().min(1) });
 
