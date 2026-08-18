@@ -69,7 +69,11 @@ export function computeHealth(t: HealthTracker): ScanHealth {
   if (t.blocked > 0 || t.usedFallback) {
     const parts: string[] = [];
     if (t.blocked > 0)
-      parts.push(`${t.blocked} request${t.blocked === 1 ? "" : "s"} were refused (401/403)`);
+      parts.push(
+        t.blocked === 1
+          ? "1 request was refused (401/403)"
+          : `${t.blocked} requests were refused (401/403)`,
+      );
     if (t.usedFallback) parts.push("the page had to be read through a rendering proxy");
     return {
       ...base,
