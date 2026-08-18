@@ -201,7 +201,12 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     pushed_at?: string;
     size?: number;
   }>(`/repos/${owner}/${repo}`);
-  if (!meta) return failure(target, "Could not fetch repository (private, not found, or rate-limited).");
+  if (!meta)
+    return failure(
+      target,
+      "Could not fetch repository (private, not found, or rate-limited).",
+      computeHealth(health),
+    );
   coverage.sourcesRead += 1;
 
   const branch = meta.default_branch ?? "main";
