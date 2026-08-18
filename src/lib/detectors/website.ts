@@ -7,13 +7,18 @@ import {
   detectArbitraryValues,
 } from "./signals";
 import { computeScores, confidenceFor, emptyCoverage, type Coverage } from "./scoring";
+import { computeHealth, createHealthTracker, type HealthTracker } from "./health";
 
 interface Fetched {
   text: string;
   headers: Headers;
 }
 
-async function fetchDoc(url: string, maxBytes = 2_500_000): Promise<Fetched | null> {
+async function fetchDoc(
+  url: string,
+  health: HealthTracker,
+  maxBytes = 2_500_000,
+): Promise<Fetched | null> {
   try {
     const res = await fetch(url, {
       redirect: "follow",
@@ -24,18 +29,20 @@ async function fetchDoc(url: string, maxBytes = 2_500_000): Promise<Fetched | nu
       },
       signal: AbortSignal.timeout(12_000),
     });
+    health.record(res);
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
     if (buf.byteLength > maxBytes) return null;
     return { text: new TextDecoder().decode(buf), headers: res.headers };
   } catch {
+    health.record(null);
     return null;
   }
 }
 
 /** Some sites block server-side fetches; fall back to a rendered-HTML proxy. */
-async function fetchPage(url: string): Promise<Fetched | null> {
-  const direct = await fetchDoc(url);
+async function fetchPage(url: string, health: HealthTracker): Promise<Fetched | null> {
+  const direct = await fetchDoc(url, health);
   if (direct) return direct;
   try {
     const res = await fetch(`https://r.jina.ai/${url}`, {
@@ -45,6 +52,7 @@ async function fetchPage(url: string): Promise<Fetched | null> {
     if (!res.ok) return null;
     const text = await res.text();
     if (!text || text.length < 200) return null;
+    health.usedFallback = true;
     return { text, headers: res.headers };
   } catch {
     return null;
@@ -81,8 +89,9 @@ function extractAssets(html: string, base: string) {
 export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> {
   const target = inputUrl;
   const coverage: Coverage = emptyCoverage();
+  const health = createHealthTracker();
   coverage.sourcesAttempted += 1;
-  const doc = await fetchPage(inputUrl);
+  const doc = await fetchPage(inputUrl, health);
 
   if (!doc) {
     return {
@@ -93,6 +102,7 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
       confidence: { vibe: confidenceFor(0, 0, coverage), ai: confidenceFor(0, 0, coverage) },
       signals: [],
       coverage,
+      health: computeHealth(health),
       error:
         "Could not fetch the page — it may block bots, require JavaScript to serve HTML, or have timed out.",
     };
@@ -205,8 +215,12 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
   coverage.sourcesAttempted += css.length + js.length;
 
   const assets = await Promise.all([
-    ...css.map((u) => fetchDoc(u, 3_000_000).then((r) => ({ kind: "css" as const, url: u, r }))),
-    ...js.map((u) => fetchDoc(u, 3_000_000).then((r) => ({ kind: "js" as const, url: u, r }))),
+    ...css.map((u) =>
+      fetchDoc(u, health, 3_000_000).then((r) => ({ kind: "css" as const, url: u, r })),
+    ),
+    ...js.map((u) =>
+      fetchDoc(u, health, 3_000_000).then((r) => ({ kind: "js" as const, url: u, r })),
+    ),
   ]);
 
   for (const asset of assets) {
@@ -292,5 +306,6 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
     },
     signals,
     coverage,
+    health: computeHealth(health),
   };
 }

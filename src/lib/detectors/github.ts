@@ -13,6 +13,12 @@ import {
   detectCnHelper,
 } from "./signals";
 import { computeScores, confidenceFor, emptyCoverage, type Coverage } from "./scoring";
+import {
+  computeHealth,
+  createHealthTracker,
+  type HealthTracker,
+  type ScanHealth,
+} from "./health";
 
 const GATEWAY = "https://connector-gateway.lovable.dev/github";
 
@@ -43,7 +49,7 @@ export function parseGithubUrl(url: string): { owner: string; repo: string } | n
   }
 }
 
-function failure(target: string, error: string): AnalysisResult {
+function failure(target: string, error: string, health?: ScanHealth): AnalysisResult {
   const coverage = emptyCoverage();
   return {
     target,
@@ -53,11 +59,12 @@ function failure(target: string, error: string): AnalysisResult {
     confidence: { vibe: confidenceFor(0, 0, coverage), ai: confidenceFor(0, 0, coverage) },
     signals: [],
     coverage,
+    ...(health ? { health } : {}),
     error,
   };
 }
 
-function makeClient(apiKey: string, connKey: string) {
+function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
   const headers = {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${apiKey}`,
@@ -65,8 +72,17 @@ function makeClient(apiKey: string, connKey: string) {
   };
   const raw = async (path: string): Promise<Response | null> => {
     try {
-      return await fetch(`${GATEWAY}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
+      const res = await fetch(`${GATEWAY}${path}`, {
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      });
+      // GitHub signals a hit quota with 403 + remaining:0, or a plain 429.
+      const remaining = res.headers.get("x-ratelimit-remaining");
+      if (res.status === 403 && remaining === "0") health.record({ status: 429 });
+      else health.record(res);
+      return res;
     } catch {
+      health.record(null);
       return null;
     }
   };
@@ -171,7 +187,8 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   const target = `github.com/${owner}/${repo}`;
   if (!apiKey || !connKey) return failure(target, "GitHub connector not configured on the server.");
 
-  const api = makeClient(apiKey, connKey);
+  const health = createHealthTracker();
+  const api = makeClient(apiKey, connKey, health);
   const coverage: Coverage = emptyCoverage();
   const signals: Signal[] = [];
 
@@ -184,7 +201,12 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     pushed_at?: string;
     size?: number;
   }>(`/repos/${owner}/${repo}`);
-  if (!meta) return failure(target, "Could not fetch repository (private, not found, or rate-limited).");
+  if (!meta)
+    return failure(
+      target,
+      "Could not fetch repository (private, not found, or rate-limited).",
+      computeHealth(health),
+    );
   coverage.sourcesRead += 1;
 
   const branch = meta.default_branch ?? "main";
@@ -549,6 +571,7 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     },
     signals,
     coverage,
+    health: computeHealth(health),
     meta: { description: meta.description, stars: meta.stargazers_count, branch },
   };
 }

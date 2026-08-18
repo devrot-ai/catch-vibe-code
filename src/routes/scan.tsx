@@ -5,6 +5,7 @@ import { useState } from "react";
 import { z } from "zod";
 import { analyzeUrl } from "../lib/analyze.functions";
 import type { AnalysisResult, Signal } from "../lib/detectors/signals";
+import type { ScanHealth } from "../lib/detectors/health";
 import { CompareView } from "../components/compare-view";
 import { encodeCompare } from "../lib/share-link";
 
@@ -130,6 +131,33 @@ function ConfidencePill({ label, detail, tone }: { label: string; detail: string
   );
 }
 
+const HEALTH_TONE: Record<ScanHealth["status"], string> = {
+  complete: "border-emerald-500/25 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
+  slow: "border-amber-500/25 bg-amber-500/5 text-amber-700 dark:text-amber-300",
+  "rate-limited": "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  blocked: "border-red-500/25 bg-red-500/5 text-red-700 dark:text-red-300",
+};
+
+function HealthBanner({ health }: { health: ScanHealth }) {
+  const r = health.requests;
+  return (
+    <div className={`mt-4 rounded-lg border px-4 py-3 ${HEALTH_TONE[health.status]}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wider">
+          Scan health: {health.label}
+        </span>
+        <span className="font-mono text-[11px] opacity-80">
+          {(health.durationMs / 1000).toFixed(1)}s · {r.ok}/{r.total} ok
+          {r.rateLimited > 0 && ` · ${r.rateLimited} throttled`}
+          {r.blocked > 0 && ` · ${r.blocked} blocked`}
+          {r.timedOut > 0 && ` · ${r.timedOut} timed out`}
+        </span>
+      </div>
+      <p className="mt-1 text-xs">{health.detail}</p>
+    </div>
+  );
+}
+
 
 
 
@@ -227,12 +255,16 @@ function ScanPage() {
         {data && !isFetching && (
           <>
             {data.error ? (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-destructive">
-                {data.error}
-              </div>
+              <>
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-destructive">
+                  {data.error}
+                </div>
+                {data.health && <HealthBanner health={data.health} />}
+              </>
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-8 rounded-xl border border-border bg-card p-8 sm:grid-cols-2">
+                {data.health && <HealthBanner health={data.health} />}
+                <div className="mt-4 grid grid-cols-1 gap-8 rounded-xl border border-border bg-card p-8 sm:grid-cols-2">
                   <Gauge
                     score={data.vibeScore}
                     label="Vibe Score"
