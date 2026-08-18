@@ -255,12 +255,16 @@ function ScanPage() {
         {data && !isFetching && (
           <>
             {data.error ? (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-destructive">
-                {data.error}
-              </div>
+              <>
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-destructive">
+                  {data.error}
+                </div>
+                {data.health && <HealthBanner health={data.health} />}
+              </>
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-8 rounded-xl border border-border bg-card p-8 sm:grid-cols-2">
+                {data.health && <HealthBanner health={data.health} />}
+                <div className="mt-4 grid grid-cols-1 gap-8 rounded-xl border border-border bg-card p-8 sm:grid-cols-2">
                   <Gauge
                     score={data.vibeScore}
                     label="Vibe Score"
