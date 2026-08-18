@@ -187,7 +187,8 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   const target = `github.com/${owner}/${repo}`;
   if (!apiKey || !connKey) return failure(target, "GitHub connector not configured on the server.");
 
-  const api = makeClient(apiKey, connKey);
+  const health = createHealthTracker();
+  const api = makeClient(apiKey, connKey, health);
   const coverage: Coverage = emptyCoverage();
   const signals: Signal[] = [];
 
