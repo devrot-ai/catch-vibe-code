@@ -29,7 +29,31 @@ export const Route = createFileRoute("/compare")({
 
 function SharedComparePage() {
   const { d } = Route.useSearch();
-  const payload = decodeCompare(d);
+  const [payload, setPayload] = useState<ComparePayload | null>(null);
+  const [decoding, setDecoding] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    setDecoding(true);
+    decodeCompare(d).then((p) => {
+      if (!live) return;
+      setPayload(p);
+      setDecoding(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, [d]);
+
+  if (decoding) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="mx-auto max-w-4xl px-6 py-10 text-sm text-muted-foreground">
+          Decoding shared comparison…
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
