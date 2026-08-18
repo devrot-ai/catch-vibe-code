@@ -102,6 +102,7 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
       confidence: { vibe: confidenceFor(0, 0, coverage), ai: confidenceFor(0, 0, coverage) },
       signals: [],
       coverage,
+      health: computeHealth(health),
       error:
         "Could not fetch the page — it may block bots, require JavaScript to serve HTML, or have timed out.",
     };
