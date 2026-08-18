@@ -566,6 +566,7 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     },
     signals,
     coverage,
+    health: computeHealth(health),
     meta: { description: meta.description, stars: meta.stargazers_count, branch },
   };
 }
