@@ -5,6 +5,7 @@ import { useState } from "react";
 import { z } from "zod";
 import { analyzeUrl } from "../lib/analyze.functions";
 import type { AnalysisResult, Signal } from "../lib/detectors/signals";
+import type { ScanHealth } from "../lib/detectors/health";
 import { CompareView } from "../components/compare-view";
 import { encodeCompare } from "../lib/share-link";
 
