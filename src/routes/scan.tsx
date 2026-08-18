@@ -154,7 +154,7 @@ function ScanPage() {
 
   const shareComparison = async () => {
     if (!baseline || !data || data.error) return;
-    const link = `${window.location.origin}/compare?d=${encodeCompare(baseline, data)}`;
+    const link = `${window.location.origin}/compare?d=${await encodeCompare(baseline, data)}`;
     try {
       await navigator.clipboard.writeText(link);
       setShareState("copied");
