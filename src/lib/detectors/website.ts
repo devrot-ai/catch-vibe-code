@@ -214,8 +214,12 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
   coverage.sourcesAttempted += css.length + js.length;
 
   const assets = await Promise.all([
-    ...css.map((u) => fetchDoc(u, 3_000_000).then((r) => ({ kind: "css" as const, url: u, r }))),
-    ...js.map((u) => fetchDoc(u, 3_000_000).then((r) => ({ kind: "js" as const, url: u, r }))),
+    ...css.map((u) =>
+      fetchDoc(u, health, 3_000_000).then((r) => ({ kind: "css" as const, url: u, r })),
+    ),
+    ...js.map((u) =>
+      fetchDoc(u, health, 3_000_000).then((r) => ({ kind: "js" as const, url: u, r })),
+    ),
   ]);
 
   for (const asset of assets) {
