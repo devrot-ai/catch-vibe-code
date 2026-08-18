@@ -17,6 +17,8 @@ export interface ScoreConfidence {
   detail: string;
 }
 
+import type { ScanHealth } from "./health";
+
 export interface AnalysisResult {
   target: string;
   kind: "github" | "website";
