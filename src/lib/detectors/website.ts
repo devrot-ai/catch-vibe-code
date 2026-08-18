@@ -89,8 +89,9 @@ function extractAssets(html: string, base: string) {
 export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> {
   const target = inputUrl;
   const coverage: Coverage = emptyCoverage();
+  const health = createHealthTracker();
   coverage.sourcesAttempted += 1;
-  const doc = await fetchPage(inputUrl);
+  const doc = await fetchPage(inputUrl, health);
 
   if (!doc) {
     return {
