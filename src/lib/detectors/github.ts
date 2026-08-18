@@ -13,6 +13,12 @@ import {
   detectCnHelper,
 } from "./signals";
 import { computeScores, confidenceFor, emptyCoverage, type Coverage } from "./scoring";
+import {
+  computeHealth,
+  createHealthTracker,
+  type HealthTracker,
+  type ScanHealth,
+} from "./health";
 
 const GATEWAY = "https://connector-gateway.lovable.dev/github";
 
