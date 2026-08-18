@@ -27,6 +27,7 @@ export interface AnalysisResult {
   confidence: { vibe: ScoreConfidence; ai: ScoreConfidence };
   signals: Signal[];
   coverage?: { sourcesRead: number; sourcesAttempted: number; notes: string[] };
+  health?: ScanHealth;
   meta?: { description?: string | null; stars?: number; branch?: string };
   error?: string;
 }
