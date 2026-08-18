@@ -43,7 +43,7 @@ export function parseGithubUrl(url: string): { owner: string; repo: string } | n
   }
 }
 
-function failure(target: string, error: string): AnalysisResult {
+function failure(target: string, error: string, health?: ScanHealth): AnalysisResult {
   const coverage = emptyCoverage();
   return {
     target,
@@ -53,11 +53,12 @@ function failure(target: string, error: string): AnalysisResult {
     confidence: { vibe: confidenceFor(0, 0, coverage), ai: confidenceFor(0, 0, coverage) },
     signals: [],
     coverage,
+    ...(health ? { health } : {}),
     error,
   };
 }
 
-function makeClient(apiKey: string, connKey: string) {
+function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
   const headers = {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${apiKey}`,
@@ -65,8 +66,17 @@ function makeClient(apiKey: string, connKey: string) {
   };
   const raw = async (path: string): Promise<Response | null> => {
     try {
-      return await fetch(`${GATEWAY}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
+      const res = await fetch(`${GATEWAY}${path}`, {
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      });
+      // GitHub signals a hit quota with 403 + remaining:0, or a plain 429.
+      const remaining = res.headers.get("x-ratelimit-remaining");
+      if (res.status === 403 && remaining === "0") health.record({ status: 429 });
+      else health.record(res);
+      return res;
     } catch {
+      health.record(null);
       return null;
     }
   };
