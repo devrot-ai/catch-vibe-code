@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { CompareView } from "../components/compare-view";
-import { decodeCompare } from "../lib/share-link";
+import { decodeCompare, type ComparePayload } from "../lib/share-link";
 
 const searchSchema = z.object({ d: z.string().min(1) });
 
