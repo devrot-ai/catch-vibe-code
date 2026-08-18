@@ -306,5 +306,6 @@ export async function analyzeWebsite(inputUrl: string): Promise<AnalysisResult> 
     },
     signals,
     coverage,
+    health: computeHealth(health),
   };
 }
