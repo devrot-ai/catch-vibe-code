@@ -444,29 +444,47 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     }
 
     // Only AI coding agents count — dependabot, renovate and github-actions are
-    // ordinary automation and must not inflate the AI score.
-    const AI_BOT = /(copilot|lovable|devin|claude|cursor|codex|sweep-ai|codegen)/i;
+    // ordinary automation and must not inflate the AI score. Author matching is
+    // anchored to real agent identities so human logins that merely contain an
+    // agent substring (or humans who merge agent-trailered commits) never count
+    // as the agent themselves.
+    const AI_BOT =
+      /^(?:github-)?(copilot|lovable|devin|claude|cursor|codex|sweep-ai|codegen)(?:-(?:swe|ai|agent|bot))?(?:\[bot\])?$/i;
+    const AI_BOT_NAME =
+      /^(?:github copilot|copilot|lovable(?:\.dev)?(?: ai)?|devin(?: ai)?|claude(?: code)?|cursor(?: agent)?|codex|sweep ai|codegen)(?:\s*\[bot\])?$/i;
     const GENERIC_BOT = /(dependabot|renovate|github-actions|greenkeeper|snyk|semantic-release|netlify|vercel|allcontributors|imgbot|pre-commit-ci)/i;
-    const botCommits = commits.filter((c) => {
-      const login = c.author?.login ?? "";
-      const name = c.commit.author?.name ?? "";
-      const byAuthor = (AI_BOT.test(login) || AI_BOT.test(name)) && !GENERIC_BOT.test(login) && !GENERIC_BOT.test(name);
-      const byTrailer = /co-authored-by:\s*(claude|copilot|cursor|lovable|chatgpt|devin|codex)/i.test(
-        c.commit.message,
-      );
-      return byAuthor || byTrailer;
+    const TRAILER_RE = /co-authored-by:\s*([^<\n]*?(?:claude|copilot|cursor|lovable|chatgpt|devin|codex)[^<\n]*)/i;
+
+    // Each hit records WHICH agent was credited, so the evidence never names the
+    // human author of a commit that merely carries an agent co-author trailer.
+    type BotHit = { commit: CommitEntry; agent: string; via: "author" | "co-author" };
+    const botCommits = commits.flatMap((c): BotHit[] => {
+      const login = (c.author?.login ?? "").trim();
+      const name = (c.commit.author?.name ?? "").trim();
+      if (GENERIC_BOT.test(login) || GENERIC_BOT.test(name)) return [];
+      if (AI_BOT.test(login)) return [{ commit: c, agent: login, via: "author" as const }];
+      if (AI_BOT_NAME.test(name)) return [{ commit: c, agent: name, via: "author" as const }];
+      const trailer = TRAILER_RE.exec(c.commit.message);
+      if (trailer) return [{ commit: c, agent: trailer[1].trim(), via: "co-author" as const }];
+      return [];
     });
     if (botCommits.length > 0) {
+      const agents = [...new Set(botCommits.map((b) => b.agent))].slice(0, 3);
+      const authored = botCommits.filter((b) => b.via === "author").length;
+      const coAuthored = botCommits.length - authored;
+      const parts = [
+        authored > 0 ? `${authored} authored` : null,
+        coAuthored > 0 ? `${coAuthored} co-authored` : null,
+      ].filter(Boolean);
       signals.push({
         id: "ai.bot_authors",
         category: "ai",
         label: "AI-agent authored commits",
         weight: Math.min(22, botCommits.length * 4),
-        evidence: `${botCommits.length} commits authored or co-authored by an AI coding agent (e.g. ${
-          botCommits[0].author?.login ?? botCommits[0].commit.author?.name ?? "co-authored trailer"
-        }).`,
+        evidence: `${parts.join(" and ")} by an AI coding agent (${agents.join(", ")}).`,
       });
     }
+
 
 
     const generic = commits.filter((c) => GENERIC_COMMIT.test(c.commit.message.split("\n")[0].trim()));
