@@ -457,7 +457,8 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
 
     // Each hit records WHICH agent was credited, so the evidence never names the
     // human author of a commit that merely carries an agent co-author trailer.
-    const botCommits = commits.flatMap((c) => {
+    type BotHit = { commit: CommitEntry; agent: string; via: "author" | "co-author" };
+    const botCommits = commits.flatMap((c): BotHit[] => {
       const login = (c.author?.login ?? "").trim();
       const name = (c.commit.author?.name ?? "").trim();
       if (GENERIC_BOT.test(login) || GENERIC_BOT.test(name)) return [];
