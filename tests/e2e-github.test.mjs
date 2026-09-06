@@ -93,12 +93,21 @@ function assertScanResult(result) {
     r.ok + r.blocked + r.rateLimited + r.timedOut <= r.total,
     "request counters must not exceed the total",
   );
+  // Retries are attempts within a request, so they are tracked separately and
+  // must never be reported as extra requests.
+  assert.equal(typeof r.retries, "number", "expected a retry counter on health");
+  assert.ok(r.retries >= 0, "retry counter must not be negative");
+  assert.ok(
+    r.retries <= r.total * 3,
+    `retries ${r.retries} exceed the 3-per-request retry budget for ${r.total} requests`,
+  );
   // The banner claims "complete" only when nothing was throttled or refused.
   if (health.status === "complete") {
     assert.equal(r.rateLimited, 0);
     assert.equal(r.blocked, 0);
     assert.equal(r.timedOut, 0);
   }
+
 
   // --- coverage ----------------------------------------------------------
   const coverage = result.coverage;
