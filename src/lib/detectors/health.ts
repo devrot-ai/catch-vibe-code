@@ -6,7 +6,14 @@ export interface ScanHealth {
   label: string;
   detail: string;
   durationMs: number;
-  requests: { total: number; ok: number; blocked: number; rateLimited: number; timedOut: number };
+  requests: {
+    total: number;
+    ok: number;
+    blocked: number;
+    rateLimited: number;
+    timedOut: number;
+    retries: number;
+  };
 }
 
 export interface HealthTracker {
@@ -16,7 +23,10 @@ export interface HealthTracker {
   blocked: number;
   rateLimited: number;
   timedOut: number;
+  retries: number;
   usedFallback: boolean;
+  /** Count one retried attempt (the retry itself is not a separate request). */
+  recordRetry(): void;
   record(res: { status: number } | null, opts?: { timedOut?: boolean }): void;
 }
 
@@ -31,7 +41,11 @@ export function createHealthTracker(): HealthTracker {
     blocked: 0,
     rateLimited: 0,
     timedOut: 0,
+    retries: 0,
     usedFallback: false,
+    recordRetry() {
+      this.retries += 1;
+    },
     record(res, opts) {
       this.total += 1;
       if (!res) {
@@ -55,6 +69,7 @@ export function computeHealth(t: HealthTracker): ScanHealth {
     blocked: t.blocked,
     rateLimited: t.rateLimited,
     timedOut: t.timedOut,
+    retries: t.retries,
   };
   const base = { durationMs, requests };
 
@@ -97,6 +112,9 @@ export function computeHealth(t: HealthTracker): ScanHealth {
     ...base,
     status: "complete",
     label: "Complete",
-    detail: `All ${t.total} source request${t.total === 1 ? "" : "s"} finished in ${(durationMs / 1000).toFixed(1)}s with no throttling or blocking.`,
+    detail:
+      t.retries > 0
+        ? `All ${t.total} source request${t.total === 1 ? "" : "s"} finished in ${(durationMs / 1000).toFixed(1)}s, after ${t.retries} automatic retr${t.retries === 1 ? "y" : "ies"} for throttling.`
+        : `All ${t.total} source request${t.total === 1 ? "" : "s"} finished in ${(durationMs / 1000).toFixed(1)}s with no throttling or blocking.`,
   };
 }
