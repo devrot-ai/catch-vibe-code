@@ -64,28 +64,83 @@ function failure(target: string, error: string, health?: ScanHealth): AnalysisRe
   };
 }
 
+/** Retry policy for GitHub throttling: 3 retries at ~0.5s / 1s / 2s + jitter. */
+const MAX_RETRIES = 3;
+const BASE_BACKOFF_MS = 500;
+const MAX_SINGLE_WAIT_MS = 10_000;
+/** Total time the whole scan may spend waiting on backoff before giving up. */
+const MAX_TOTAL_BACKOFF_MS = 20_000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** True when the response means "try again later" rather than a real answer. */
+function isRetryable(res: Response | null): boolean {
+  if (!res) return true; // network error / timeout
+  if (res.status === 429) return true;
+  if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") return true;
+  return res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504;
+}
+
+/** Prefer the server's own hint (retry-after / rate-limit reset) over the fixed curve. */
+function serverWaitMs(res: Response | null): number | null {
+  if (!res) return null;
+  const retryAfter = res.headers.get("retry-after");
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
+  }
+  const reset = res.headers.get("x-ratelimit-reset");
+  if (reset) {
+    const at = Number(reset) * 1000;
+    if (Number.isFinite(at)) return Math.max(0, at - Date.now());
+  }
+  return null;
+}
+
 function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
   const headers = {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${apiKey}`,
     "X-Connection-Api-Key": connKey,
   };
-  const raw = async (path: string): Promise<Response | null> => {
+  // Shared across the whole scan so a throttled run degrades instead of stalling.
+  let backoffSpentMs = 0;
+
+  const attempt = async (path: string): Promise<Response | null> => {
     try {
-      const res = await fetch(`${GATEWAY}${path}`, {
-        headers,
-        signal: AbortSignal.timeout(15_000),
-      });
-      // GitHub signals a hit quota with 403 + remaining:0, or a plain 429.
-      const remaining = res.headers.get("x-ratelimit-remaining");
-      if (res.status === 403 && remaining === "0") health.record({ status: 429 });
-      else health.record(res);
-      return res;
+      return await fetch(`${GATEWAY}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
     } catch {
-      health.record(null);
       return null;
     }
   };
+
+  const raw = async (path: string): Promise<Response | null> => {
+    let res: Response | null = null;
+    for (let i = 0; i <= MAX_RETRIES; i += 1) {
+      res = await attempt(path);
+      if (i === MAX_RETRIES || !isRetryable(res)) break;
+
+      const hinted = serverWaitMs(res);
+      const backoff = BASE_BACKOFF_MS * 2 ** i;
+      const wait = Math.min(hinted ?? backoff, MAX_SINGLE_WAIT_MS) + Math.random() * 250;
+      if (backoffSpentMs + wait > MAX_TOTAL_BACKOFF_MS) break;
+
+      backoffSpentMs += wait;
+      health.recordRetry();
+      await sleep(wait);
+    }
+
+    // Only the final attempt counts as the request outcome.
+    if (!res) {
+      health.record(null);
+      return null;
+    }
+    const remaining = res.headers.get("x-ratelimit-remaining");
+    if (res.status === 403 && remaining === "0") health.record({ status: 429 });
+    else health.record(res);
+    return res;
+  };
+
   const json = async <T,>(path: string): Promise<T | null> => {
     const res = await raw(path);
     if (!res || !res.ok) return null;
