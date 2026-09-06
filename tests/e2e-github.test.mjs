@@ -162,5 +162,4 @@ function assertScanResult(result) {
     // never read as a zero-evidence scan.
     assert.ok(vibeCount > 0, "shadcn-ui/ui should produce vibe signals");
     assert.ok(result.vibeScore >= 35, `expected medium-or-higher vibe, got ${result.vibeScore}`);
-  },
-);
+}
