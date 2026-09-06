@@ -1,10 +1,56 @@
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
 import test from "node:test";
 
 import { analyzeGithub } from "../src/lib/detectors/github.ts";
 import { categoryRaw, normalizeWeight, confidenceFor } from "../src/lib/detectors/scoring.ts";
 
 const HAS_KEYS = Boolean(process.env.LOVABLE_API_KEY && process.env.GITHUB_API_KEY);
+
+const REPORT_DIR = "test-results";
+const REPORT_PATH = `${REPORT_DIR}/e2e-scan-report.json`;
+
+/**
+ * Dump the full scan result (raw signals, health banner, score breakdown) to
+ * disk so CI can upload it as an artifact when the test fails. Never includes
+ * credentials — only the analyzer's own output.
+ */
+async function writeScanReport(result, failure) {
+  const report = {
+    generatedAt: new Date().toISOString(),
+    target: result?.target ?? "github.com/shadcn-ui/ui",
+    failure: failure ? { name: failure.name, message: failure.message } : null,
+    scores: result
+      ? {
+          vibe: result.vibeScore,
+          ai: result.aiScore,
+          confidence: result.confidence,
+          raw: {
+            vibe: categoryRaw(result.signals ?? [], "vibe"),
+            ai: categoryRaw(result.signals ?? [], "ai"),
+          },
+          normalized: {
+            vibe: normalizeWeight(categoryRaw(result.signals ?? [], "vibe")),
+            ai: normalizeWeight(categoryRaw(result.signals ?? [], "ai")),
+          },
+        }
+      : null,
+    health: result?.health ?? null,
+    coverage: result?.coverage ?? null,
+    error: result?.error ?? null,
+    signals: (result?.signals ?? []).map((s) => ({
+      id: s.id,
+      category: s.category,
+      weight: s.weight,
+      label: s.label,
+      evidence: s.evidence,
+      sourceRef: s.sourceRef ?? null,
+    })),
+  };
+  await mkdir(REPORT_DIR, { recursive: true });
+  await writeFile(REPORT_PATH, JSON.stringify(report, null, 2));
+  console.log(`scan report written to ${REPORT_PATH}`);
+}
 
 /**
  * Live end-to-end scan of a real repository. Skipped automatically when the
