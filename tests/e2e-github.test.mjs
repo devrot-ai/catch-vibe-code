@@ -60,19 +60,20 @@ async function writeScanReport(result, failure) {
 test(
   "shadcn-ui/ui end-to-end scan keeps health, confidence and signals consistent",
   { skip: HAS_KEYS ? false : "GitHub connector credentials not configured", timeout: 120_000 },
-  async (t) => {
+  async () => {
     let result;
     try {
       result = await analyzeGithub("shadcn-ui", "ui");
+      assertScanResult(result);
     } catch (err) {
-      await writeScanReport(null, err);
+      // On failure the report lands in test-results/ for the CI artifact upload.
+      await writeScanReport(result ?? null, err);
       throw err;
     }
-    // On failure the report lands in test-results/ for the CI artifact upload.
-    t.after(async () => {
-      if (!t.passed) await writeScanReport(result, null);
-    });
+  },
+);
 
+function assertScanResult(result) {
     assert.equal(result.error, undefined, `scan failed: ${result.error}`);
     assert.equal(result.kind, "github");
     assert.equal(result.target, "github.com/shadcn-ui/ui");
