@@ -75,6 +75,7 @@ test(
   "shadcn-ui/ui end-to-end scan keeps health, confidence and signals consistent",
   { skip: HAS_KEYS ? false : "GitHub connector credentials not configured", timeout: 120_000 },
   async () => {
+    if (!HAS_KEYS) return; // credentials absent: skip (already warned above)
     let result;
     try {
       result = await analyzeGithub("shadcn-ui", "ui");
