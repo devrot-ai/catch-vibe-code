@@ -5,10 +5,20 @@ import test from "node:test";
 import { analyzeGithub } from "../src/lib/detectors/github.ts";
 import { categoryRaw, normalizeWeight, confidenceFor } from "../src/lib/detectors/scoring.ts";
 
-const HAS_KEYS = Boolean(process.env.LOVABLE_API_KEY && process.env.GITHUB_API_KEY);
-
 const REPORT_DIR = "test-results";
 const REPORT_PATH = `${REPORT_DIR}/e2e-scan-report.json`;
+
+const MISSING_KEYS = ["LOVABLE_API_KEY", "GITHUB_API_KEY"].filter((k) => !process.env[k]);
+const HAS_KEYS = MISSING_KEYS.length === 0;
+
+// Make a self-skip impossible to miss: annotate it in CI and leave a marker
+// file the workflow turns into a warning on the run summary.
+if (!HAS_KEYS) {
+  const msg = `E2E live scan skipped: missing ${MISSING_KEYS.join(", ")}. Configure these repository secrets or the scan is never exercised.`;
+  console.log(`::warning title=E2E scan skipped::${msg}`);
+  await mkdir(REPORT_DIR, { recursive: true });
+  await writeFile(`${REPORT_DIR}/e2e-skipped.txt`, `${MISSING_KEYS.join(",")}\n`);
+}
 
 /**
  * Dump the full scan result (raw signals, health banner, score breakdown) to
@@ -36,6 +46,10 @@ async function writeScanReport(result, failure) {
         }
       : null,
     health: result?.health ?? null,
+    // Throttling/retry stats for the run, so flaky CI runs can be diagnosed
+    // without reproducing the scan locally.
+    throttling: result?.health?.throttling ?? null,
+    requests: result?.health?.requests ?? null,
     coverage: result?.coverage ?? null,
     error: result?.error ?? null,
     signals: (result?.signals ?? []).map((s) => ({
@@ -97,6 +111,16 @@ function assertScanResult(result) {
   // must never be reported as extra requests.
   assert.equal(typeof r.retries, "number", "expected a retry counter on health");
   assert.ok(r.retries >= 0, "retry counter must not be negative");
+  const th = health.throttling;
+  assert.ok(th, "expected throttling statistics on health");
+  assert.equal(th.retries, r.retries, "throttling stats must agree with the retry counter");
+  assert.equal(
+    th.retriesByReason["rate-limited"] + th.retriesByReason["server-error"] + th.retriesByReason.timeout,
+    th.retries,
+    "every retry must be attributed to a reason",
+  );
+  assert.ok(th.waitedMs >= 0 && th.longestWaitMs >= 0);
+  assert.ok(th.serverHintedWaits <= th.retries);
   assert.ok(
     r.retries <= r.total * 3,
     `retries ${r.retries} exceed the 3-per-request retry budget for ${r.total} requests`,
