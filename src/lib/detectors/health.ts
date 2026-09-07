@@ -14,6 +14,20 @@ export interface ScanHealth {
     timedOut: number;
     retries: number;
   };
+  /** Per-scan throttling/retry statistics, for diagnosing flaky runs. */
+  throttling: ThrottleStats;
+}
+
+export interface ThrottleStats {
+  retries: number;
+  retriesByReason: { "rate-limited": number; "server-error": number; timeout: number };
+  /** Total time spent sleeping between attempts. */
+  waitedMs: number;
+  longestWaitMs: number;
+  /** Retries whose wait came from a retry-after / rate-limit-reset header. */
+  serverHintedWaits: number;
+  /** Requests that gave up early because the scan-wide wait budget was spent. */
+  budgetExhausted: number;
 }
 
 export interface HealthTracker {
@@ -24,9 +38,15 @@ export interface HealthTracker {
   rateLimited: number;
   timedOut: number;
   retries: number;
+  retriesByReason: { "rate-limited": number; "server-error": number; timeout: number };
+  retryWaitMs: number;
+  longestRetryWaitMs: number;
+  serverHintedWaits: number;
+  retryBudgetExhausted: number;
   usedFallback: boolean;
   /** Count one retried attempt (the retry itself is not a separate request). */
-  recordRetry(): void;
+  recordRetry(reason?: "rate-limited" | "server-error" | "timeout", waitMs?: number, serverHinted?: boolean): void;
+  recordRetryBudgetExhausted(): void;
   record(res: { status: number } | null, opts?: { timedOut?: boolean }): void;
 }
 
@@ -42,9 +62,21 @@ export function createHealthTracker(): HealthTracker {
     rateLimited: 0,
     timedOut: 0,
     retries: 0,
+    retriesByReason: { "rate-limited": 0, "server-error": 0, timeout: 0 },
+    retryWaitMs: 0,
+    longestRetryWaitMs: 0,
+    serverHintedWaits: 0,
+    retryBudgetExhausted: 0,
     usedFallback: false,
-    recordRetry() {
+    recordRetry(reason, waitMs = 0, serverHinted = false) {
       this.retries += 1;
+      if (reason) this.retriesByReason[reason] += 1;
+      this.retryWaitMs += waitMs;
+      this.longestRetryWaitMs = Math.max(this.longestRetryWaitMs, waitMs);
+      if (serverHinted) this.serverHintedWaits += 1;
+    },
+    recordRetryBudgetExhausted() {
+      this.retryBudgetExhausted += 1;
     },
     record(res, opts) {
       this.total += 1;
@@ -71,7 +103,15 @@ export function computeHealth(t: HealthTracker): ScanHealth {
     timedOut: t.timedOut,
     retries: t.retries,
   };
-  const base = { durationMs, requests };
+  const throttling: ThrottleStats = {
+    retries: t.retries,
+    retriesByReason: { ...t.retriesByReason },
+    waitedMs: Math.round(t.retryWaitMs),
+    longestWaitMs: Math.round(t.longestRetryWaitMs),
+    serverHintedWaits: t.serverHintedWaits,
+    budgetExhausted: t.retryBudgetExhausted,
+  };
+  const base = { durationMs, requests, throttling };
 
   if (t.rateLimited > 0) {
     return {

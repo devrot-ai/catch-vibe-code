@@ -19,6 +19,8 @@ import {
   type HealthTracker,
   type ScanHealth,
 } from "./health";
+import { computeWaitMs, retryConfig, retryReason, serverWaitMs } from "./retry";
+
 
 const GATEWAY = "https://connector-gateway.lovable.dev/github";
 
@@ -64,38 +66,7 @@ function failure(target: string, error: string, health?: ScanHealth): AnalysisRe
   };
 }
 
-/** Retry policy for GitHub throttling: 3 retries at ~0.5s / 1s / 2s + jitter. */
-const MAX_RETRIES = 3;
-const BASE_BACKOFF_MS = 500;
-const MAX_SINGLE_WAIT_MS = 10_000;
-/** Total time the whole scan may spend waiting on backoff before giving up. */
-const MAX_TOTAL_BACKOFF_MS = 20_000;
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** True when the response means "try again later" rather than a real answer. */
-function isRetryable(res: Response | null): boolean {
-  if (!res) return true; // network error / timeout
-  if (res.status === 429) return true;
-  if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") return true;
-  return res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504;
-}
-
-/** Prefer the server's own hint (retry-after / rate-limit reset) over the fixed curve. */
-function serverWaitMs(res: Response | null): number | null {
-  if (!res) return null;
-  const retryAfter = res.headers.get("retry-after");
-  if (retryAfter) {
-    const secs = Number(retryAfter);
-    if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
-  }
-  const reset = res.headers.get("x-ratelimit-reset");
-  if (reset) {
-    const at = Number(reset) * 1000;
-    if (Number.isFinite(at)) return Math.max(0, at - Date.now());
-  }
-  return null;
-}
 
 function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
   const headers = {
@@ -103,6 +74,7 @@ function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
     Authorization: `Bearer ${apiKey}`,
     "X-Connection-Api-Key": connKey,
   };
+  const cfg = retryConfig();
   // Shared across the whole scan so a throttled run degrades instead of stalling.
   let backoffSpentMs = 0;
 
@@ -116,17 +88,21 @@ function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
 
   const raw = async (path: string): Promise<Response | null> => {
     let res: Response | null = null;
-    for (let i = 0; i <= MAX_RETRIES; i += 1) {
+    const lastAttempt = cfg.maxAttempts - 1;
+    for (let i = 0; i <= lastAttempt; i += 1) {
       res = await attempt(path);
-      if (i === MAX_RETRIES || !isRetryable(res)) break;
+      const reason = retryReason(res);
+      if (i === lastAttempt || reason === null) break;
 
       const hinted = serverWaitMs(res);
-      const backoff = BASE_BACKOFF_MS * 2 ** i;
-      const wait = Math.min(hinted ?? backoff, MAX_SINGLE_WAIT_MS) + Math.random() * 250;
-      if (backoffSpentMs + wait > MAX_TOTAL_BACKOFF_MS) break;
+      const wait = computeWaitMs(i, hinted, cfg);
+      if (backoffSpentMs + wait > cfg.maxTotalWaitMs) {
+        health.recordRetryBudgetExhausted();
+        break;
+      }
 
       backoffSpentMs += wait;
-      health.recordRetry();
+      health.recordRetry(reason, wait, hinted !== null);
       await sleep(wait);
     }
 
@@ -140,6 +116,7 @@ function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
     else health.record(res);
     return res;
   };
+
 
   const json = async <T,>(path: string): Promise<T | null> => {
     const res = await raw(path);
