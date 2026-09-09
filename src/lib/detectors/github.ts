@@ -19,7 +19,12 @@ import {
   type HealthTracker,
   type ScanHealth,
 } from "./health";
-import { computeWaitMs, retryConfig, retryReason, serverWaitMs } from "./retry";
+import {
+  createRetryRunner,
+  retryConfig,
+  type RetryConfig,
+  type RetryRunnerOptions,
+} from "./retry";
 
 
 const GATEWAY = "https://connector-gateway.lovable.dev/github";
