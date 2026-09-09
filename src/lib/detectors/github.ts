@@ -19,7 +19,12 @@ import {
   type HealthTracker,
   type ScanHealth,
 } from "./health";
-import { computeWaitMs, retryConfig, retryReason, serverWaitMs } from "./retry";
+import {
+  createRetryRunner,
+  retryConfig,
+  type RetryConfig,
+  type RetryRunnerOptions,
+} from "./retry";
 
 
 const GATEWAY = "https://connector-gateway.lovable.dev/github";
@@ -66,45 +71,39 @@ function failure(target: string, error: string, health?: ScanHealth): AnalysisRe
   };
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function makeClient(apiKey: string, connKey: string, health: HealthTracker) {
+/**
+ * Build the GitHub gateway client. `deps` exists so offline tests can drive the
+ * exact same retry/health code path with a scripted fetch and no real waiting.
+ */
+export function makeClient(
+  apiKey: string,
+  connKey: string,
+  health: HealthTracker,
+  deps: {
+    fetchImpl?: typeof fetch;
+    config?: RetryConfig;
+    runnerOptions?: RetryRunnerOptions;
+  } = {},
+) {
   const headers = {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${apiKey}`,
     "X-Connection-Api-Key": connKey,
   };
-  const cfg = retryConfig();
-  // Shared across the whole scan so a throttled run degrades instead of stalling.
-  let backoffSpentMs = 0;
+  const doFetch = deps.fetchImpl ?? fetch;
+  const cfg = deps.config ?? retryConfig();
+  const run = createRetryRunner(cfg, health, deps.runnerOptions);
 
   const attempt = async (path: string): Promise<Response | null> => {
     try {
-      return await fetch(`${GATEWAY}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
+      return await doFetch(`${GATEWAY}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
     } catch {
       return null;
     }
   };
 
   const raw = async (path: string): Promise<Response | null> => {
-    let res: Response | null = null;
-    const lastAttempt = cfg.maxAttempts - 1;
-    for (let i = 0; i <= lastAttempt; i += 1) {
-      res = await attempt(path);
-      const reason = retryReason(res);
-      if (i === lastAttempt || reason === null) break;
-
-      const hinted = serverWaitMs(res);
-      const wait = computeWaitMs(i, hinted, cfg);
-      if (backoffSpentMs + wait > cfg.maxTotalWaitMs) {
-        health.recordRetryBudgetExhausted();
-        break;
-      }
-
-      backoffSpentMs += wait;
-      health.recordRetry(reason, wait, hinted !== null);
-      await sleep(wait);
-    }
+    const res = await run<Response | null>(() => attempt(path));
 
     // Only the final attempt counts as the request outcome.
     if (!res) {

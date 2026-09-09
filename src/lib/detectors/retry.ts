@@ -94,3 +94,58 @@ export function computeWaitMs(
   const chosen = hintedMs ?? backoff;
   return Math.min(chosen, cfg.maxSingleWaitMs) + jitter * cfg.jitterMs;
 }
+
+/** Minimal surface the runner needs from the health tracker. */
+export interface RetryRecorder {
+  recordRetry(reason: Exclude<RetryReason, null>, waitMs: number, serverHinted: boolean): void;
+  recordRetryBudgetExhausted(): void;
+}
+
+export interface RetryRunnerOptions {
+  /** Injectable for deterministic offline tests (no real waiting). */
+  sleep?: (ms: number) => Promise<void>;
+  /** Injectable jitter source in [0,1). */
+  jitter?: () => number;
+  /** Injectable clock, used when reading server reset hints. */
+  now?: () => number;
+}
+
+const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Build a retry runner whose backoff budget is shared across every request in
+ * one scan, so a throttled run degrades gracefully instead of stalling.
+ */
+export function createRetryRunner(
+  cfg: RetryConfig,
+  recorder: RetryRecorder,
+  opts: RetryRunnerOptions = {},
+) {
+  const sleep = opts.sleep ?? realSleep;
+  const jitter = opts.jitter ?? Math.random;
+  const now = opts.now ?? Date.now;
+  let backoffSpentMs = 0;
+
+  return async function run<T extends { status: number; headers?: Headers } | null>(
+    attempt: (attemptIndex: number) => Promise<T>,
+  ): Promise<T> {
+    let res = (await attempt(0)) as T;
+    const lastAttempt = cfg.maxAttempts - 1;
+    for (let i = 0; i < lastAttempt; i += 1) {
+      const reason = retryReason(res);
+      if (reason === null) break;
+
+      const hinted = serverWaitMs(res, now());
+      const wait = computeWaitMs(i, hinted, cfg, jitter());
+      if (backoffSpentMs + wait > cfg.maxTotalWaitMs) {
+        recorder.recordRetryBudgetExhausted();
+        break;
+      }
+      backoffSpentMs += wait;
+      recorder.recordRetry(reason, wait, hinted !== null);
+      await sleep(wait);
+      res = (await attempt(i + 1)) as T;
+    }
+    return res;
+  };
+}
