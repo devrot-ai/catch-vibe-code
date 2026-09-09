@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "test": "npm run test:unit && npm run test:regression",
-    "test:unit": "node --test tests/retry.test.mjs",
+    "test:unit": "node --test tests/retry.test.mjs tests/retry-fixture.test.mjs",
     "test:regression": "node --test tests/regression.test.mjs",
     "test:e2e": "bun test tests/e2e-github.test.mjs",
     "lint": "eslint .",
