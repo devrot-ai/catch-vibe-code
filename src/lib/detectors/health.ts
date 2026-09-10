@@ -75,6 +75,7 @@ export function createHealthTracker(): HealthTracker {
     serverHintedWaits: 0,
     retryBudgetExhausted: 0,
     usedFallback: false,
+    retryEvents: [],
     recordRetry(reason, waitMs = 0, serverHinted = false) {
       this.retries += 1;
       if (reason) this.retriesByReason[reason] += 1;
@@ -84,6 +85,9 @@ export function createHealthTracker(): HealthTracker {
     },
     recordRetryBudgetExhausted() {
       this.retryBudgetExhausted += 1;
+    },
+    recordRetryEvent(event) {
+      if (this.retryEvents.length < MAX_RETRY_EVENTS) this.retryEvents.push(event);
     },
     record(res, opts) {
       this.total += 1;
