@@ -1,3 +1,5 @@
+import type { RetryEvent } from "./retry";
+
 /** Runtime health of a scan: how well the fetching phase actually went. */
 export type HealthStatus = "complete" | "slow" | "rate-limited" | "blocked";
 
