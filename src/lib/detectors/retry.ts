@@ -101,6 +101,30 @@ export interface RetryRecorder {
   recordRetryBudgetExhausted(): void;
 }
 
+/** One machine-parsable retry event, emitted as it happens. */
+export interface RetryEvent {
+  /** ISO timestamp (from the injected clock, so tests stay deterministic). */
+  at: string;
+  /** Request path that was retried, when the caller supplies one. */
+  path: string | null;
+  /** 0-based index of the attempt that failed and triggered this event. */
+  attempt: number;
+  type: "retry" | "budget-exhausted";
+  reason: Exclude<RetryReason, null>;
+  /** HTTP status of the failed attempt, null for a network error/timeout. */
+  status: number | null;
+  /** Wait the server asked for (retry-after / rate-limit reset), if any. */
+  hintedMs: number | null;
+  serverHinted: boolean;
+  /** Wait actually taken; 0 for a budget-exhausted event. */
+  waitMs: number;
+  /** Total backoff spent in this scan after the event. */
+  budgetSpentMs: number;
+}
+
+/** Cap so a badly throttled run cannot produce an enormous artifact. */
+export const MAX_RETRY_EVENTS = 500;
+
 export interface RetryRunnerOptions {
   /** Injectable for deterministic offline tests (no real waiting). */
   sleep?: (ms: number) => Promise<void>;
@@ -108,6 +132,8 @@ export interface RetryRunnerOptions {
   jitter?: () => number;
   /** Injectable clock, used when reading server reset hints. */
   now?: () => number;
+  /** Structured retry log sink. */
+  onEvent?: (event: RetryEvent) => void;
 }
 
 const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -124,10 +150,12 @@ export function createRetryRunner(
   const sleep = opts.sleep ?? realSleep;
   const jitter = opts.jitter ?? Math.random;
   const now = opts.now ?? Date.now;
+  const onEvent = opts.onEvent;
   let backoffSpentMs = 0;
 
   return async function run<T extends { status: number; headers?: Headers } | null>(
     attempt: (attemptIndex: number) => Promise<T>,
+    path: string | null = null,
   ): Promise<T> {
     let res = (await attempt(0)) as T;
     const lastAttempt = cfg.maxAttempts - 1;
@@ -137,12 +165,23 @@ export function createRetryRunner(
 
       const hinted = serverWaitMs(res, now());
       const wait = computeWaitMs(i, hinted, cfg, jitter());
+      const base = {
+        at: new Date(now()).toISOString(),
+        path,
+        attempt: i,
+        reason,
+        status: res ? res.status : null,
+        hintedMs: hinted,
+        serverHinted: hinted !== null,
+      };
       if (backoffSpentMs + wait > cfg.maxTotalWaitMs) {
         recorder.recordRetryBudgetExhausted();
+        onEvent?.({ ...base, type: "budget-exhausted", waitMs: 0, budgetSpentMs: backoffSpentMs });
         break;
       }
       backoffSpentMs += wait;
       recorder.recordRetry(reason, wait, hinted !== null);
+      onEvent?.({ ...base, type: "retry", waitMs: wait, budgetSpentMs: backoffSpentMs });
       await sleep(wait);
       res = (await attempt(i + 1)) as T;
     }
