@@ -7,6 +7,7 @@ import { categoryRaw, normalizeWeight, confidenceFor } from "../src/lib/detector
 
 const REPORT_DIR = "test-results";
 const REPORT_PATH = `${REPORT_DIR}/e2e-scan-report.json`;
+const THROTTLING_PATH = `${REPORT_DIR}/e2e-throttling.json`;
 
 const MISSING_KEYS = ["LOVABLE_API_KEY", "GITHUB_API_KEY"].filter((k) => !process.env[k]);
 const HAS_KEYS = MISSING_KEYS.length === 0;
