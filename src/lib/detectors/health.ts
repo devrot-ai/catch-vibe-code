@@ -1,4 +1,4 @@
-import type { RetryEvent } from "./retry";
+import { MAX_RETRY_EVENTS, type RetryEvent } from "./retry";
 
 /** Runtime health of a scan: how well the fetching phase actually went. */
 export type HealthStatus = "complete" | "slow" | "rate-limited" | "blocked";
@@ -121,6 +121,7 @@ export function computeHealth(t: HealthTracker): ScanHealth {
     longestWaitMs: Math.round(t.longestRetryWaitMs),
     serverHintedWaits: t.serverHintedWaits,
     budgetExhausted: t.retryBudgetExhausted,
+    events: [...t.retryEvents],
   };
   const base = { durationMs, requests, throttling };
 
