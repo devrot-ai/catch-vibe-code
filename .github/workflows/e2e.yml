@@ -41,6 +41,14 @@ jobs:
       - name: Run retry unit tests
         run: bun run test:unit
 
+      # Coverage gate: the retry logic must stay exercised, so a regression
+      # that removes or bypasses it fails here instead of in production.
+      - name: Check retry coverage threshold
+        env:
+          RETRY_COVERAGE_LINES: ${{ vars.RETRY_COVERAGE_LINES || '90' }}
+          RETRY_COVERAGE_FUNCS: ${{ vars.RETRY_COVERAGE_FUNCS || '90' }}
+        run: bun run test:coverage
+
       - name: Run end-to-end scan test
         env:
           LOVABLE_API_KEY: ${{ secrets.LOVABLE_API_KEY }}
@@ -70,6 +78,12 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # Throttling/retry stats on the run summary, pass or fail, so a slow or
+      # retry-heavy (flaky) run is visible without downloading the artifact.
+      - name: Scan throttling summary
+        if: always()
+        run: bun scripts/throttling-summary.mjs
+
       # On failure, upload the scan report (raw signals, health banner, score
       # breakdown) so the failure can be debugged without re-running the scan.
       - name: Upload scan report on failure
@@ -77,6 +91,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-scan-report-${{ github.run_id }}
-          path: test-results/e2e-scan-report.json
+          path: |
+            test-results/e2e-scan-report.json
+            test-results/e2e-throttling.json
           if-no-files-found: warn
           retention-days: 14
