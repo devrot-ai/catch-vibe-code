@@ -92,7 +92,16 @@ export function makeClient(
   };
   const doFetch = deps.fetchImpl ?? fetch;
   const cfg = deps.config ?? retryConfig();
-  const run = createRetryRunner(cfg, health, deps.runnerOptions);
+  const runnerOptions = deps.runnerOptions ?? {};
+  const run = createRetryRunner(cfg, health, {
+    ...runnerOptions,
+    // Structured retry log: every event lands on the health tracker (capped),
+    // while any injected sink still sees it too.
+    onEvent: (event) => {
+      health.recordRetryEvent(event);
+      runnerOptions.onEvent?.(event);
+    },
+  });
 
   const attempt = async (path: string): Promise<Response | null> => {
     try {
@@ -103,7 +112,7 @@ export function makeClient(
   };
 
   const raw = async (path: string): Promise<Response | null> => {
-    const res = await run<Response | null>(() => attempt(path));
+    const res = await run<Response | null>(() => attempt(path), path);
 
     // Only the final attempt counts as the request outcome.
     if (!res) {
