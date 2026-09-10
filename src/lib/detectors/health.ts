@@ -1,3 +1,5 @@
+import { MAX_RETRY_EVENTS, type RetryEvent } from "./retry";
+
 /** Runtime health of a scan: how well the fetching phase actually went. */
 export type HealthStatus = "complete" | "slow" | "rate-limited" | "blocked";
 
@@ -28,6 +30,8 @@ export interface ThrottleStats {
   serverHintedWaits: number;
   /** Requests that gave up early because the scan-wide wait budget was spent. */
   budgetExhausted: number;
+  /** Structured, machine-parsable log of every retry event in this scan. */
+  events: RetryEvent[];
 }
 
 export interface HealthTracker {
@@ -44,9 +48,12 @@ export interface HealthTracker {
   serverHintedWaits: number;
   retryBudgetExhausted: number;
   usedFallback: boolean;
+  /** Structured retry log; capped so a throttled run stays small. */
+  retryEvents: RetryEvent[];
   /** Count one retried attempt (the retry itself is not a separate request). */
   recordRetry(reason?: "rate-limited" | "server-error" | "timeout", waitMs?: number, serverHinted?: boolean): void;
   recordRetryBudgetExhausted(): void;
+  recordRetryEvent(event: RetryEvent): void;
   record(res: { status: number } | null, opts?: { timedOut?: boolean }): void;
 }
 
@@ -68,6 +75,7 @@ export function createHealthTracker(): HealthTracker {
     serverHintedWaits: 0,
     retryBudgetExhausted: 0,
     usedFallback: false,
+    retryEvents: [],
     recordRetry(reason, waitMs = 0, serverHinted = false) {
       this.retries += 1;
       if (reason) this.retriesByReason[reason] += 1;
@@ -77,6 +85,9 @@ export function createHealthTracker(): HealthTracker {
     },
     recordRetryBudgetExhausted() {
       this.retryBudgetExhausted += 1;
+    },
+    recordRetryEvent(event) {
+      if (this.retryEvents.length < MAX_RETRY_EVENTS) this.retryEvents.push(event);
     },
     record(res, opts) {
       this.total += 1;
@@ -110,6 +121,7 @@ export function computeHealth(t: HealthTracker): ScanHealth {
     longestWaitMs: Math.round(t.longestRetryWaitMs),
     serverHintedWaits: t.serverHintedWaits,
     budgetExhausted: t.retryBudgetExhausted,
+    events: [...t.retryEvents],
   };
   const base = { durationMs, requests, throttling };
 
