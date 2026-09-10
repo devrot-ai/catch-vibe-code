@@ -30,6 +30,8 @@ export interface ThrottleStats {
   serverHintedWaits: number;
   /** Requests that gave up early because the scan-wide wait budget was spent. */
   budgetExhausted: number;
+  /** Structured, machine-parsable log of every retry event in this scan. */
+  events: RetryEvent[];
 }
 
 export interface HealthTracker {
