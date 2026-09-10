@@ -79,14 +79,61 @@ test(
     let result;
     try {
       result = await analyzeGithub("shadcn-ui", "ui");
+      // Written on pass and fail alike: the workflow turns it into a step
+      // summary so a slow-but-green run still shows its throttling.
+      await writeThrottlingSummary(result);
       assertScanResult(result);
+      assertRetryLog(result);
     } catch (err) {
+      await writeThrottlingSummary(result ?? null);
       // On failure the report lands in test-results/ for the CI artifact upload.
       await writeScanReport(result ?? null, err);
       throw err;
     }
   },
 );
+
+/** Always-written throttling snapshot, including the structured retry log. */
+async function writeThrottlingSummary(result) {
+  const health = result?.health ?? null;
+  await mkdir(REPORT_DIR, { recursive: true });
+  await writeFile(
+    THROTTLING_PATH,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        target: result?.target ?? "github.com/shadcn-ui/ui",
+        status: health?.status ?? "unknown",
+        label: health?.label ?? "Unknown",
+        durationMs: health?.durationMs ?? 0,
+        requests: health?.requests ?? null,
+        throttling: health?.throttling ?? null,
+        retryLog: health?.throttling?.events ?? [],
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+/** The structured retry log must agree with the retry counters. */
+function assertRetryLog(result) {
+  const th = result.health.throttling;
+  const log = th.events;
+  assert.ok(Array.isArray(log), "expected a structured retry log");
+  const retries = log.filter((e) => e.type === "retry").length;
+  const exhausted = log.filter((e) => e.type === "budget-exhausted").length;
+  assert.equal(retries, Math.min(th.retries, log.length), "retry events must match the counter");
+  assert.equal(exhausted, th.budgetExhausted, "budget-exhausted events must match the counter");
+  for (const e of log) {
+    assert.ok(["retry", "budget-exhausted"].includes(e.type));
+    assert.ok(["rate-limited", "server-error", "timeout"].includes(e.reason));
+    assert.ok(typeof e.at === "string" && !Number.isNaN(Date.parse(e.at)));
+    assert.ok(e.path === null || e.path.startsWith("/"), `bad retry event path ${e.path}`);
+    assert.ok(Number.isFinite(e.waitMs) && e.waitMs >= 0);
+    assert.ok(Number.isFinite(e.budgetSpentMs) && e.budgetSpentMs >= 0);
+  }
+}
 
 function assertScanResult(result) {
   assert.equal(result.error, undefined, `scan failed: ${result.error}`);
