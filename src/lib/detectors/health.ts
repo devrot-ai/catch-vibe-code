@@ -48,9 +48,12 @@ export interface HealthTracker {
   serverHintedWaits: number;
   retryBudgetExhausted: number;
   usedFallback: boolean;
+  /** Structured retry log; capped so a throttled run stays small. */
+  retryEvents: RetryEvent[];
   /** Count one retried attempt (the retry itself is not a separate request). */
   recordRetry(reason?: "rate-limited" | "server-error" | "timeout", waitMs?: number, serverHinted?: boolean): void;
   recordRetryBudgetExhausted(): void;
+  recordRetryEvent(event: RetryEvent): void;
   record(res: { status: number } | null, opts?: { timedOut?: boolean }): void;
 }
 
