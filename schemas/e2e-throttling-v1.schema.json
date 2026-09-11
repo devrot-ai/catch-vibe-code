@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://vibe-analyzer.local/schemas/e2e-throttling-v1.schema.json",
+  "title": "E2E GitHub throttling report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "target",
+    "status",
+    "label",
+    "durationMs",
+    "requests",
+    "throttling",
+    "retryLog"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "target": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["complete", "slow", "rate-limited", "blocked"] },
+    "label": { "type": "string", "minLength": 1 },
+    "durationMs": { "type": "number", "minimum": 0 },
+    "requests": { "$ref": "#/definitions/requests" },
+    "throttling": { "$ref": "#/definitions/throttling" },
+    "retryLog": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/definitions/retryEvent" }
+    }
+  },
+  "definitions": {
+    "nonNegativeInteger": { "type": "integer", "minimum": 0 },
+    "nonNegativeNumber": { "type": "number", "minimum": 0 },
+    "requests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "ok", "blocked", "rateLimited", "timedOut", "retries"],
+      "properties": {
+        "total": { "$ref": "#/definitions/nonNegativeInteger" },
+        "ok": { "$ref": "#/definitions/nonNegativeInteger" },
+        "blocked": { "$ref": "#/definitions/nonNegativeInteger" },
+        "rateLimited": { "$ref": "#/definitions/nonNegativeInteger" },
+        "timedOut": { "$ref": "#/definitions/nonNegativeInteger" },
+        "retries": { "$ref": "#/definitions/nonNegativeInteger" }
+      }
+    },
+    "throttling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "retries",
+        "retriesByReason",
+        "waitedMs",
+        "longestWaitMs",
+        "serverHintedWaits",
+        "budgetExhausted",
+        "events"
+      ],
+      "properties": {
+        "retries": { "$ref": "#/definitions/nonNegativeInteger" },
+        "retriesByReason": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rate-limited", "server-error", "timeout"],
+          "properties": {
+            "rate-limited": { "$ref": "#/definitions/nonNegativeInteger" },
+            "server-error": { "$ref": "#/definitions/nonNegativeInteger" },
+            "timeout": { "$ref": "#/definitions/nonNegativeInteger" }
+          }
+        },
+        "waitedMs": { "$ref": "#/definitions/nonNegativeNumber" },
+        "longestWaitMs": { "$ref": "#/definitions/nonNegativeNumber" },
+        "serverHintedWaits": { "$ref": "#/definitions/nonNegativeInteger" },
+        "budgetExhausted": { "$ref": "#/definitions/nonNegativeInteger" },
+        "events": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/definitions/retryEvent" }
+        }
+      }
+    },
+    "retryEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "path",
+        "attempt",
+        "type",
+        "reason",
+        "status",
+        "hintedMs",
+        "serverHinted",
+        "waitMs",
+        "budgetSpentMs"
+      ],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "path": { "type": ["string", "null"] },
+        "attempt": { "$ref": "#/definitions/nonNegativeInteger" },
+        "type": { "enum": ["retry", "budget-exhausted"] },
+        "reason": { "enum": ["rate-limited", "server-error", "timeout"] },
+        "status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+        "hintedMs": {
+          "anyOf": [{ "$ref": "#/definitions/nonNegativeNumber" }, { "type": "null" }]
+        },
+        "serverHinted": { "type": "boolean" },
+        "waitMs": { "$ref": "#/definitions/nonNegativeNumber" },
+        "budgetSpentMs": { "$ref": "#/definitions/nonNegativeNumber" }
+      }
+    }
+  }
+}

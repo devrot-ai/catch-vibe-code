@@ -72,6 +72,10 @@ jobs:
           GITHUB_RETRY_TOTAL_WAIT_MS: ${{ vars.GITHUB_RETRY_TOTAL_WAIT_MS || '20000' }}
         run: bun run test:e2e
 
+      - name: Validate throttling report and export CSV
+        if: always() && hashFiles('test-results/e2e-skipped.txt') == ''
+        run: bun run report:throttling
+
       # A self-skip means the live scan never ran: make that loud instead of
       # letting a misconfigured secret pass as a green run.
       - name: Warn when the live scan self-skipped
@@ -105,5 +109,6 @@ jobs:
           path: |
             test-results/e2e-scan-report.json
             test-results/e2e-throttling.json
+            test-results/e2e-throttling.csv
           if-no-files-found: warn
           retention-days: 14

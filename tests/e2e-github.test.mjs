@@ -8,6 +8,7 @@ import { categoryRaw, normalizeWeight, confidenceFor } from "../src/lib/detector
 const REPORT_DIR = "test-results";
 const REPORT_PATH = `${REPORT_DIR}/e2e-scan-report.json`;
 const THROTTLING_PATH = `${REPORT_DIR}/e2e-throttling.json`;
+const REPORT_SCHEMA_VERSION = 1;
 
 const MISSING_KEYS = ["LOVABLE_API_KEY", "GITHUB_API_KEY"].filter((k) => !process.env[k]);
 const HAS_KEYS = MISSING_KEYS.length === 0;
@@ -28,6 +29,7 @@ if (!HAS_KEYS) {
  */
 async function writeScanReport(result, failure) {
   const report = {
+    schemaVersion: REPORT_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     target: result?.target ?? "github.com/shadcn-ui/ui",
     failure: failure ? { name: failure.name, message: failure.message } : null,
@@ -50,6 +52,7 @@ async function writeScanReport(result, failure) {
     // Throttling/retry stats for the run, so flaky CI runs can be diagnosed
     // without reproducing the scan locally.
     throttling: result?.health?.throttling ?? null,
+    retryLog: result?.health?.throttling?.events ?? [],
     requests: result?.health?.requests ?? null,
     coverage: result?.coverage ?? null,
     error: result?.error ?? null,
@@ -102,6 +105,7 @@ async function writeThrottlingSummary(result) {
     THROTTLING_PATH,
     JSON.stringify(
       {
+        schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: new Date().toISOString(),
         target: result?.target ?? "github.com/shadcn-ui/ui",
         status: health?.status ?? "unknown",
