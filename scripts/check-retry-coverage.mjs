@@ -15,6 +15,16 @@ const TARGET = "src/lib/detectors/retry.ts";
 const MIN_LINES = Number(process.env["RETRY_COVERAGE_LINES"] ?? 90);
 const MIN_FUNCS = Number(process.env["RETRY_COVERAGE_FUNCS"] ?? 90);
 
+for (const [name, value] of [
+  ["RETRY_COVERAGE_LINES", MIN_LINES],
+  ["RETRY_COVERAGE_FUNCS", MIN_FUNCS],
+]) {
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    console.error(`${name} must be a number between 0 and 100; received ${value}`);
+    process.exit(1);
+  }
+}
+
 function parseLcov(text) {
   const records = [];
   let current = null;
