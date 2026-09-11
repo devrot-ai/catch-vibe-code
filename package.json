@@ -9,12 +9,13 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "test": "npm run test:unit && npm run test:regression",
-    "test:unit": "node --test tests/retry.test.mjs && bun test tests/retry-fixture.test.mjs",
+    "test:unit": "node --test tests/retry.test.mjs tests/throttling-report.test.mjs && bun test tests/retry-fixture.test.mjs",
     "test:regression": "node --test tests/regression.test.mjs",
     "test:e2e": "bun test tests/e2e-github.test.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test:coverage": "bun test tests/retry.test.mjs tests/retry-fixture.test.mjs --coverage --coverage-reporter=lcov --coverage-dir=coverage && node scripts/check-retry-coverage.mjs"
+    "test:coverage": "bun test tests/retry.test.mjs tests/retry-fixture.test.mjs --coverage --coverage-reporter=lcov --coverage-dir=coverage && node scripts/check-retry-coverage.mjs",
+    "report:throttling": "node scripts/validate-throttling-report.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -77,6 +78,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "ajv": "^8.20.0",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
