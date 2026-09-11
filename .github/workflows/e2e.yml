@@ -6,6 +6,17 @@ on:
     # Nightly at 03:17 UTC (off-peak, avoids the top-of-hour API rush).
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      retry_coverage_lines:
+        description: Minimum retry line coverage percentage (0-100)
+        required: false
+        default: "90"
+        type: string
+      retry_coverage_functions:
+        description: Minimum retry function coverage percentage (0-100)
+        required: false
+        default: "90"
+        type: string
 
 # Only one live-scan run per branch at a time: cancels superseded PR runs so
 # we never burn GitHub API quota on stale commits.
@@ -45,8 +56,8 @@ jobs:
       # that removes or bypasses it fails here instead of in production.
       - name: Check retry coverage threshold
         env:
-          RETRY_COVERAGE_LINES: ${{ vars.RETRY_COVERAGE_LINES || '90' }}
-          RETRY_COVERAGE_FUNCS: ${{ vars.RETRY_COVERAGE_FUNCS || '90' }}
+          RETRY_COVERAGE_LINES: ${{ inputs.retry_coverage_lines || vars.RETRY_COVERAGE_LINES || '90' }}
+          RETRY_COVERAGE_FUNCS: ${{ inputs.retry_coverage_functions || vars.RETRY_COVERAGE_FUNCS || '90' }}
         run: bun run test:coverage
 
       - name: Run end-to-end scan test
