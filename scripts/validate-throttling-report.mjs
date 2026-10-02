@@ -30,6 +30,11 @@ export function validateThrottlingReport(report) {
   if (JSON.stringify(report.retryTimeline) !== JSON.stringify(report.retryLog)) {
     throw new Error("Invalid throttling report: retryTimeline and retryLog differ");
   }
+  for (let index = 1; index < report.retryTimeline.length; index += 1) {
+    if (Date.parse(report.retryTimeline[index - 1].at) > Date.parse(report.retryTimeline[index].at)) {
+      throw new Error("Invalid throttling report: retryTimeline is not chronological");
+    }
+  }
   return report;
 }
 
@@ -63,11 +68,11 @@ const columns = [
   "event_hinted_ms",
   "event_server_hinted",
   "event_wait_ms",
-  "event_budget_spent_ms"
-  ,"event_completed_at"
-  ,"event_next_attempt"
-  ,"event_outcome"
-  ,"event_outcome_status"
+  "event_budget_spent_ms",
+  "event_completed_at",
+  "event_next_attempt",
+  "event_outcome",
+  "event_outcome_status",
 ];
 
 const csvCell = (value) => {

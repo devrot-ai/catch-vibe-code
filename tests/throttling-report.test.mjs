@@ -86,6 +86,12 @@ test("rejects a timeline that differs from the retry log", () => {
   assert.throws(() => validateThrottlingReport(value), /retryTimeline and retryLog differ/);
 });
 
+test("rejects timeline entries that are out of chronological order", () => {
+  const later = { ...event, at: "2026-09-11T09:15:00.000Z" };
+  const value = report([later, event]);
+  assert.throws(() => validateThrottlingReport(value), /not chronological/);
+});
+
 test("validates a JSON file before writing its CSV", async () => {
   const dir = await mkdtemp(join(tmpdir(), "throttling-report-"));
   const input = join(dir, "report.json");

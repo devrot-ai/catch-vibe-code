@@ -121,7 +121,9 @@ export function computeHealth(t: HealthTracker): ScanHealth {
     longestWaitMs: Math.round(t.longestRetryWaitMs),
     serverHintedWaits: t.serverHintedWaits,
     budgetExhausted: t.retryBudgetExhausted,
-    events: [...t.retryEvents],
+    events: [...t.retryEvents].sort(
+      (left, right) => Date.parse(left.at) - Date.parse(right.at),
+    ),
   };
   const base = { durationMs, requests, throttling };
 
