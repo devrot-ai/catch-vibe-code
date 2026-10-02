@@ -2,9 +2,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import Ajv from "ajv";
 
-export const REPORT_SCHEMA_VERSION = 1;
+export const REPORT_SCHEMA_VERSION = 2;
 const schema = JSON.parse(
-  await readFile(new URL("../schemas/e2e-throttling-v1.schema.json", import.meta.url), "utf8"),
+  await readFile(new URL("../schemas/e2e-throttling-v2.schema.json", import.meta.url), "utf8"),
 );
 const ajv = new Ajv({ allErrors: true, strict: true, formats: { "date-time": true } });
 const validate = ajv.compile(schema);
@@ -26,6 +26,9 @@ export function validateThrottlingReport(report) {
   }
   if (JSON.stringify(report.retryLog) !== JSON.stringify(report.throttling.events)) {
     throw new Error("Invalid throttling report: retryLog and throttling.events differ");
+  }
+  if (JSON.stringify(report.retryTimeline) !== JSON.stringify(report.retryLog)) {
+    throw new Error("Invalid throttling report: retryTimeline and retryLog differ");
   }
   return report;
 }
@@ -61,6 +64,10 @@ const columns = [
   "event_server_hinted",
   "event_wait_ms",
   "event_budget_spent_ms"
+  ,"event_completed_at"
+  ,"event_next_attempt"
+  ,"event_outcome"
+  ,"event_outcome_status"
 ];
 
 const csvCell = (value) => {
@@ -103,6 +110,10 @@ export function throttlingReportToCsv(input) {
     event?.serverHinted,
     event?.waitMs,
     event?.budgetSpentMs,
+    event?.completedAt,
+    event?.nextAttempt,
+    event?.outcome,
+    event?.outcomeStatus,
   ]);
   return `${[columns, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
 }
