@@ -21,10 +21,14 @@ const event = {
   serverHinted: true,
   waitMs: 1000,
   budgetSpentMs: 1000,
+  completedAt: "2026-09-11T09:14:01.000Z",
+  nextAttempt: 1,
+  outcome: "recovered",
+  outcomeStatus: 200,
 };
 
 const report = (events = [event]) => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   generatedAt: "2026-09-11T09:14:00.000Z",
   target: "github.com/example/repo",
   status: "complete",
@@ -41,10 +45,11 @@ const report = (events = [event]) => ({
     events,
   },
   retryLog: events,
+  retryTimeline: events,
 });
 
 test("accepts a complete versioned throttling report", () => {
-  assert.equal(validateThrottlingReport(report()).schemaVersion, 1);
+  assert.equal(validateThrottlingReport(report()).schemaVersion, 2);
 });
 
 test("rejects missing required per-scan retry fields", () => {
@@ -54,7 +59,7 @@ test("rejects missing required per-scan retry fields", () => {
 });
 
 test("rejects unsupported versions and malformed retry events", () => {
-  assert.throws(() => validateThrottlingReport({ ...report(), schemaVersion: 2 }), /version 2/);
+  assert.throws(() => validateThrottlingReport({ ...report(), schemaVersion: 1 }), /version 1/);
   const value = report();
   value.retryLog[0] = { ...event, waitMs: -1 };
   value.throttling.events = value.retryLog;
@@ -66,12 +71,19 @@ test("exports one escaped CSV row per retry event", () => {
   assert.match(csv, /^schema_version,generated_at,/);
   assert.match(csv, /"\/repos\/example\/repo,with-comma"/);
   assert.match(csv, /,1,2026-09-11T09:14:00\.000Z,/);
+  assert.match(csv, /,2026-09-11T09:14:01\.000Z,1,recovered,200/);
 });
 
 test("exports a summary row when the scan has no retries", () => {
   const csv = throttlingReportToCsv(report([]));
   assert.equal(csv.trim().split("\n").length, 2);
-  assert.match(csv, /,0,0,0,0,0,0,,,,,,,,,,,\n$/);
+  assert.match(csv, /,0,0,0,0,0,0,,,,,,,,,,,,,,,\n$/);
+});
+
+test("rejects a timeline that differs from the retry log", () => {
+  const value = report();
+  value.retryTimeline = [];
+  assert.throws(() => validateThrottlingReport(value), /retryTimeline and retryLog differ/);
 });
 
 test("validates a JSON file before writing its CSV", async () => {
