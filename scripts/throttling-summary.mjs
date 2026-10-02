@@ -38,14 +38,14 @@ const lines = [
     `Server-hinted waits: ${t.serverHintedWaits}. Wait budget exhausted: ${t.budgetExhausted}.`,
 ];
 
-const log = data.retryLog ?? [];
+const log = data.retryTimeline ?? data.retryLog ?? [];
 if (log.length > 0) {
-  lines.push("", "<details><summary>Retry log</summary>", "");
-  lines.push("| # | Path | Attempt | Reason | Status | Hinted | Wait |");
-  lines.push("|--:|------|--------:|--------|-------:|-------:|-----:|");
+  lines.push("", "<details><summary>Retry timeline</summary>", "");
+  lines.push("| # | Time | Path | Attempt | Trigger | Status | Wait | Next attempt | Outcome |");
+  lines.push("|--:|------|------|--------:|---------|-------:|-----:|-------------:|---------|");
   log.slice(0, 50).forEach((e, i) => {
     lines.push(
-      `| ${i + 1} | \`${e.path ?? "-"}\` | ${e.attempt} | ${e.type === "budget-exhausted" ? "budget exhausted" : e.reason} | ${e.status ?? "-"} | ${e.serverHinted ? "yes" : "no"} | ${secs(e.waitMs)} |`,
+      `| ${i + 1} | ${e.at} | \`${e.path ?? "-"}\` | ${e.attempt + 1} | ${e.type === "budget-exhausted" ? "budget exhausted" : e.reason} | ${e.status ?? "timeout"} | ${secs(e.waitMs)}${e.serverHinted ? " (hinted)" : ""} | ${e.nextAttempt === null ? "-" : e.nextAttempt + 1} | ${e.outcome}${e.outcomeStatus === null ? "" : ` (${e.outcomeStatus})`} |`,
     );
   });
   if (log.length > 50) lines.push("", `_…and ${log.length - 50} more events (see the artifact)._`);

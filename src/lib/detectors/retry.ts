@@ -120,6 +120,14 @@ export interface RetryEvent {
   waitMs: number;
   /** Total backoff spent in this scan after the event. */
   budgetSpentMs: number;
+  /** ISO timestamp when the follow-up attempt completed. */
+  completedAt: string;
+  /** Index of the follow-up attempt, or null when the wait budget stopped it. */
+  nextAttempt: number | null;
+  /** What happened after this throttling event and wait. */
+  outcome: "recovered" | "retrying" | "failed" | "budget-exhausted";
+  /** Status returned by the follow-up attempt, or null for timeout/no attempt. */
+  outcomeStatus: number | null;
 }
 
 /** Cap so a badly throttled run cannot produce an enormous artifact. */
@@ -176,14 +184,39 @@ export function createRetryRunner(
       };
       if (backoffSpentMs + wait > cfg.maxTotalWaitMs) {
         recorder.recordRetryBudgetExhausted();
-        onEvent?.({ ...base, type: "budget-exhausted", waitMs: 0, budgetSpentMs: backoffSpentMs });
+        onEvent?.({
+          ...base,
+          type: "budget-exhausted",
+          waitMs: 0,
+          budgetSpentMs: backoffSpentMs,
+          completedAt: new Date(now()).toISOString(),
+          nextAttempt: null,
+          outcome: "budget-exhausted",
+          outcomeStatus: null,
+        });
         break;
       }
       backoffSpentMs += wait;
       recorder.recordRetry(reason, wait, hinted !== null);
-      onEvent?.({ ...base, type: "retry", waitMs: wait, budgetSpentMs: backoffSpentMs });
       await sleep(wait);
       res = (await attempt(i + 1)) as T;
+      const nextReason = retryReason(res);
+      const outcome =
+        nextReason === null
+          ? "recovered"
+          : i + 1 === lastAttempt
+            ? "failed"
+            : "retrying";
+      onEvent?.({
+        ...base,
+        type: "retry",
+        waitMs: wait,
+        budgetSpentMs: backoffSpentMs,
+        completedAt: new Date(now()).toISOString(),
+        nextAttempt: i + 1,
+        outcome,
+        outcomeStatus: res ? res.status : null,
+      });
     }
     return res;
   };

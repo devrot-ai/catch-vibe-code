@@ -8,7 +8,7 @@ import { categoryRaw, normalizeWeight, confidenceFor } from "../src/lib/detector
 const REPORT_DIR = "test-results";
 const REPORT_PATH = `${REPORT_DIR}/e2e-scan-report.json`;
 const THROTTLING_PATH = `${REPORT_DIR}/e2e-throttling.json`;
-const REPORT_SCHEMA_VERSION = 1;
+const REPORT_SCHEMA_VERSION = 2;
 
 const MISSING_KEYS = ["LOVABLE_API_KEY", "GITHUB_API_KEY"].filter((k) => !process.env[k]);
 const HAS_KEYS = MISSING_KEYS.length === 0;
@@ -53,6 +53,7 @@ async function writeScanReport(result, failure) {
     // without reproducing the scan locally.
     throttling: result?.health?.throttling ?? null,
     retryLog: result?.health?.throttling?.events ?? [],
+    retryTimeline: result?.health?.throttling?.events ?? [],
     requests: result?.health?.requests ?? null,
     coverage: result?.coverage ?? null,
     error: result?.error ?? null,
@@ -114,6 +115,7 @@ async function writeThrottlingSummary(result) {
         requests: health?.requests ?? null,
         throttling: health?.throttling ?? null,
         retryLog: health?.throttling?.events ?? [],
+        retryTimeline: health?.throttling?.events ?? [],
       },
       null,
       2,
@@ -137,6 +139,9 @@ function assertRetryLog(result) {
     assert.ok(e.path === null || e.path.startsWith("/"), `bad retry event path ${e.path}`);
     assert.ok(Number.isFinite(e.waitMs) && e.waitMs >= 0);
     assert.ok(Number.isFinite(e.budgetSpentMs) && e.budgetSpentMs >= 0);
+    assert.ok(typeof e.completedAt === "string" && !Number.isNaN(Date.parse(e.completedAt)));
+    assert.ok(["recovered", "retrying", "failed", "budget-exhausted"].includes(e.outcome));
+    assert.ok(e.nextAttempt === null || Number.isInteger(e.nextAttempt));
   }
 }
 

@@ -147,13 +147,27 @@ test("structured retry events are logged for each attempt", async () => {
   const log = h.health.retryEvents;
   assert.equal(log.length, 2);
   assert.deepEqual(
-    log.map((e) => [e.type, e.path, e.attempt, e.reason, e.status, e.waitMs, e.budgetSpentMs]),
+    log.map((e) => [
+      e.type,
+      e.path,
+      e.attempt,
+      e.reason,
+      e.status,
+      e.waitMs,
+      e.budgetSpentMs,
+      e.nextAttempt,
+      e.outcome,
+      e.outcomeStatus,
+    ]),
     [
-      ["retry", "/repos/a/b", 0, "rate-limited", 429, 500, 500],
-      ["retry", "/repos/a/b", 1, "rate-limited", 429, 1000, 1500],
+      ["retry", "/repos/a/b", 0, "rate-limited", 429, 500, 500, 1, "retrying", 429],
+      ["retry", "/repos/a/b", 1, "rate-limited", 429, 1000, 1500, 2, "recovered", 200],
     ],
   );
-  for (const e of log) assert.ok(!Number.isNaN(Date.parse(e.at)), "events carry a timestamp");
+  for (const e of log) {
+    assert.ok(!Number.isNaN(Date.parse(e.at)), "events carry a start timestamp");
+    assert.ok(!Number.isNaN(Date.parse(e.completedAt)), "events carry an outcome timestamp");
+  }
   // The same log is exposed on the computed health for the scan report.
   assert.deepEqual(computeHealth(h.health).throttling.events, log);
 });
@@ -174,6 +188,22 @@ test("a timeout retry and an exhausted budget are logged distinctly", async () =
   const types = budget.health.retryEvents.map((e) => e.type);
   assert.deepEqual(types, ["retry", "budget-exhausted"]);
   assert.equal(budget.health.retryEvents.at(-1).waitMs, 0);
+  assert.equal(budget.health.retryEvents.at(-1).outcome, "budget-exhausted");
+  assert.equal(budget.health.retryEvents.at(-1).nextAttempt, null);
+});
+
+test("the timeline records timeout recovery and final failed outcomes", async () => {
+  const timeouts = harness({ "*": [responses.timeout(), responses.ok()] });
+  await timeouts.client.raw("/repos/a/b");
+  assert.deepEqual(
+    timeouts.health.retryEvents.map((e) => [e.reason, e.outcome, e.outcomeStatus]),
+    [["timeout", "recovered", 200]],
+  );
+
+  const failed = harness(scenarios.permanentlyThrottled);
+  await failed.client.raw("/repos/a/b");
+  assert.equal(failed.health.retryEvents.at(-1).outcome, "failed");
+  assert.equal(failed.health.retryEvents.at(-1).outcomeStatus, 429);
 });
 
 test("a server-hinted wait is flagged in the log", async () => {
@@ -198,6 +228,10 @@ test("the retry log is capped so an artifact cannot grow unbounded", async () =>
     serverHinted: false,
     waitMs: 1,
     budgetSpentMs: 1,
+    completedAt: new Date().toISOString(),
+    nextAttempt: 1,
+    outcome: "recovered",
+    outcomeStatus: 200,
   };
   for (let i = 0; i < MAX_RETRY_EVENTS + 25; i += 1) health.recordRetryEvent({ ...event });
   assert.equal(health.retryEvents.length, MAX_RETRY_EVENTS);
