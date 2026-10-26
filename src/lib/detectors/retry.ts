@@ -197,13 +197,14 @@ export function createRetryRunner(
         break;
       }
       backoffSpentMs += wait;
+      const budgetAfterWait = backoffSpentMs;
       recorder.recordRetry(reason, wait, hinted !== null);
       await sleep(wait);
       res = (await attempt(i + 1)) as T;
       const nextReason = retryReason(res);
       const outcome =
         nextReason === null
-          ? "recovered"
+          ? res && res.status >= 200 && res.status < 400 ? "recovered" : "failed"
           : i + 1 === lastAttempt
             ? "failed"
             : "retrying";
@@ -211,7 +212,7 @@ export function createRetryRunner(
         ...base,
         type: "retry",
         waitMs: wait,
-        budgetSpentMs: backoffSpentMs,
+        budgetSpentMs: budgetAfterWait,
         completedAt: new Date(now()).toISOString(),
         nextAttempt: i + 1,
         outcome,

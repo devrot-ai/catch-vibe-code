@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { computeHealth, createHealthTracker } from "../src/lib/detectors/health.ts";
 import { makeClient } from "../src/lib/detectors/github.ts";
-import { DEFAULT_RETRY_CONFIG, MAX_RETRY_EVENTS } from "../src/lib/detectors/retry.ts";
+import { createRetryRunner, DEFAULT_RETRY_CONFIG, MAX_RETRY_EVENTS } from "../src/lib/detectors/retry.ts";
 import {
   createFakeClock,
   createMockGateway,
@@ -204,6 +204,24 @@ test("the timeline records timeout recovery and final failed outcomes", async ()
   await failed.client.raw("/repos/a/b");
   assert.equal(failed.health.retryEvents.at(-1).outcome, "failed");
   assert.equal(failed.health.retryEvents.at(-1).outcomeStatus, 429);
+});
+
+test("a non-retryable error after backoff is a failed outcome", async () => {
+  const h = harness({ "*": [responses.rateLimited(), responses.notFound()] });
+  await h.client.raw("/repos/a/b");
+  assert.equal(h.health.retryEvents[0].outcome, "failed");
+  assert.equal(h.health.retryEvents[0].outcomeStatus, 404);
+});
+
+test("the default sleeper completes a zero-delay retry", async () => {
+  const health = createHealthTracker();
+  const run = createRetryRunner(
+    { ...DEFAULT_RETRY_CONFIG, baseMs: 0, jitterMs: 0 },
+    health,
+  );
+  const result = await run(async (index) => new Response(null, { status: index === 0 ? 429 : 200 }));
+  assert.equal(result.status, 200);
+  assert.equal(health.retries, 1);
 });
 
 test("a server-hinted wait is flagged in the log", async () => {
