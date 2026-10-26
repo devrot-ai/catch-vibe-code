@@ -206,6 +206,13 @@ test("the timeline records timeout recovery and final failed outcomes", async ()
   assert.equal(failed.health.retryEvents.at(-1).outcomeStatus, 429);
 });
 
+test("a non-retryable error after backoff is a failed outcome", async () => {
+  const h = harness({ "*": [responses.rateLimited(), responses.notFound()] });
+  await h.client.raw("/repos/a/b");
+  assert.equal(h.health.retryEvents[0].outcome, "failed");
+  assert.equal(h.health.retryEvents[0].outcomeStatus, 404);
+});
+
 test("a server-hinted wait is flagged in the log", async () => {
   const h = harness(scenarios.honoursRetryAfter);
   await h.client.raw("/repos/a/b");
