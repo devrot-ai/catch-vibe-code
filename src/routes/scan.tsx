@@ -9,7 +9,7 @@ import type { ScanHealth } from "../lib/detectors/health";
 import { CompareView } from "../components/compare-view";
 import { encodeCompare } from "../lib/share-link";
 
-const searchSchema = z.object({ url: z.string().min(1) });
+const searchSchema = z.object({ url: z.string().min(1).optional() });
 
 export const Route = createFileRoute("/scan")({
   validateSearch: (s) => searchSchema.parse(s),
