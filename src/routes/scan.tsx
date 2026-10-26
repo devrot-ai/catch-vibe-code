@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -9,7 +9,7 @@ import type { ScanHealth } from "../lib/detectors/health";
 import { CompareView } from "../components/compare-view";
 import { encodeCompare } from "../lib/share-link";
 
-const searchSchema = z.object({ url: z.string().min(1) });
+const searchSchema = z.object({ url: z.string().min(1).optional() });
 
 export const Route = createFileRoute("/scan")({
   validateSearch: (s) => searchSchema.parse(s),
@@ -162,10 +162,52 @@ function HealthBanner({ health }: { health: ScanHealth }) {
 
 
 function ScanPage() {
-  const { url } = Route.useSearch();
+  const urlParam = Route.useSearch().url;
+  const navigate = useNavigate();
+  const [urlInput, setUrlInput] = useState(urlParam ?? "");
   const analyze = useServerFn(analyzeUrl);
   const [baseline, setBaseline] = useState<AnalysisResult | null>(null);
   const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
+
+  if (!urlParam) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="mx-auto max-w-xl px-6 py-16">
+          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
+            ← Back home
+          </Link>
+          <form
+            className="mt-4 rounded-xl border border-border bg-card p-8"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = urlInput.trim();
+              if (v) navigate({ to: "/scan", search: { url: v } });
+            }}
+          >
+            <h1 className="text-xl font-semibold">Scan a repo or website</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Paste a GitHub repository or website URL to get its Vibe and AI scores.
+            </p>
+            <input
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="https://github.com/owner/repo"
+              className="mt-4 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={!urlInput.trim()}
+              className="mt-3 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+            >
+              Scan
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  const url = urlParam;
 
   const { data, isFetching, error, refetch } = useQuery({
     queryKey: ["scan", url],
