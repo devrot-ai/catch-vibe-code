@@ -84,12 +84,18 @@ export function makeClient(
     config?: RetryConfig;
     runnerOptions?: RetryRunnerOptions;
   } = {},
+  options: { baseUrl?: string; headers?: Record<string, string> } = {},
 ) {
+  // When custom headers are supplied (public GitHub API fallback), no connector
+  // auth headers are sent; otherwise the connector gateway requires both keys.
   const headers = {
     Accept: "application/vnd.github+json",
-    Authorization: `Bearer ${apiKey}`,
-    "X-Connection-Api-Key": connKey,
+    ...(options.headers ?? {
+      Authorization: `Bearer ${apiKey}`,
+      "X-Connection-Api-Key": connKey,
+    }),
   };
+  const base = options.baseUrl ?? GATEWAY;
   const doFetch = deps.fetchImpl ?? fetch;
   const cfg = deps.config ?? retryConfig();
   const runnerOptions = deps.runnerOptions ?? {};
