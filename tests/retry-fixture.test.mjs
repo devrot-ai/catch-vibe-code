@@ -254,3 +254,24 @@ test("the retry log is capped so an artifact cannot grow unbounded", async () =>
   for (let i = 0; i < MAX_RETRY_EVENTS + 25; i += 1) health.recordRetryEvent({ ...event });
   assert.equal(health.retryEvents.length, MAX_RETRY_EVENTS);
 });
+
+test("the public fallback client sends no connector auth headers", async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push({ url, headers: init.headers });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  const health = createHealthTracker();
+  const client = makeClient("", "", health, { fetchImpl }, {
+    baseUrl: "https://api.github.com",
+    headers: { Accept: "application/vnd.github+json" },
+  });
+
+  const res = await client.raw("/repos/a/b");
+  assert.equal(res.status, 200);
+  assert.equal(seen.length, 1);
+  assert.ok(seen[0].url.startsWith("https://api.github.com/repos/a/b"));
+  assert.equal(seen[0].headers.Authorization, undefined, "no Authorization header on the public API");
+  assert.equal(seen[0].headers["X-Connection-Api-Key"], undefined, "no connection key on the public API");
+  assert.equal(seen[0].headers.Accept, "application/vnd.github+json");
+});
