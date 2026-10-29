@@ -111,7 +111,7 @@ export function makeClient(
 
   const attempt = async (path: string): Promise<Response | null> => {
     try {
-      return await doFetch(`${GATEWAY}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
+      return await doFetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(15_000) });
     } catch {
       return null;
     }
