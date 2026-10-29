@@ -240,6 +240,9 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   let api = useConnector
     ? makeClient(apiKey as string, connKey as string, health)
     : makePublicClient(health);
+  if (!useConnector) {
+    coverage.notes.push("No GitHub connector configured — scanned via the public GitHub API.");
+  }
 
   coverage.sourcesAttempted += 1;
   const meta = await api.json<{
