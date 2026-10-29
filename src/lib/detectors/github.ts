@@ -256,14 +256,7 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   if (!meta && useConnector) {
     coverage.notes.push("GitHub connector unavailable — scanned via the public GitHub API instead.");
     api = makePublicClient(health);
-    const publicMeta = await api.json<{
-      default_branch?: string;
-      description?: string;
-      stargazers_count?: number;
-      created_at?: string;
-      pushed_at?: string;
-      size?: number;
-    }>(`/repos/${owner}/${repo}`);
+    const publicMeta = await api.json<GithubMeta>(`/repos/${owner}/${repo}`);
     if (publicMeta) return continueGithubScan({ owner, repo, target, api, meta: publicMeta, health, coverage, signals });
   }
 
@@ -309,9 +302,6 @@ async function continueGithubScan(args: {
 }): Promise<AnalysisResult> {
   const { owner, repo, target, api, meta, health, coverage } = args;
   const signals = args.signals;
-  if (!useConnectorNoteAdded(coverage) && !process.env.GITHUB_API_KEY) {
-    coverage.notes.push("No GitHub connector configured — scanned via the public GitHub API.");
-  }
   coverage.sourcesRead += 1;
 
   const branch = meta.default_branch ?? "main";
