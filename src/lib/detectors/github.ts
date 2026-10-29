@@ -231,12 +231,15 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   const apiKey = process.env.LOVABLE_API_KEY;
   const connKey = process.env.GITHUB_API_KEY;
   const target = `github.com/${owner}/${repo}`;
-  if (!apiKey || !connKey) return failure(target, "GitHub connector not configured on the server.");
 
   const health = createHealthTracker();
-  const api = makeClient(apiKey, connKey, health);
   const coverage: Coverage = emptyCoverage();
   const signals: Signal[] = [];
+
+  const useConnector = Boolean(apiKey && connKey);
+  let api = useConnector
+    ? makeClient(apiKey as string, connKey as string, health)
+    : makePublicClient(health);
 
   coverage.sourcesAttempted += 1;
   const meta = await api.json<{
@@ -247,12 +250,68 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
     pushed_at?: string;
     size?: number;
   }>(`/repos/${owner}/${repo}`);
+
+  // Connector credentials invalid/expired (or absent): fall back to the public
+  // GitHub API so public repositories still scan. Private repos keep failing.
+  if (!meta && useConnector) {
+    coverage.notes.push("GitHub connector unavailable — scanned via the public GitHub API instead.");
+    api = makePublicClient(health);
+    const publicMeta = await api.json<{
+      default_branch?: string;
+      description?: string;
+      stargazers_count?: number;
+      created_at?: string;
+      pushed_at?: string;
+      size?: number;
+    }>(`/repos/${owner}/${repo}`);
+    if (publicMeta) return continueGithubScan({ owner, repo, target, api, meta: publicMeta, health, coverage, signals });
+  }
+
   if (!meta)
     return failure(
       target,
       "Could not fetch repository (private, not found, or rate-limited).",
       computeHealth(health),
     );
+
+  return continueGithubScan({ owner, repo, target, api, meta, health, coverage, signals });
+}
+
+/**
+ * Client over GitHub's unauthenticated REST API for public repositories. Used
+ * when the connector is not linked or its credentials were revoked.
+ */
+function makePublicClient(health: HealthTracker) {
+  return makeClient("", "", health, {}, {
+    baseUrl: "https://api.github.com",
+    headers: { Accept: "application/vnd.github+json" },
+  });
+}
+
+type GithubMeta = {
+  default_branch?: string;
+  description?: string;
+  stargazers_count?: number;
+  created_at?: string;
+  pushed_at?: string;
+  size?: number;
+};
+
+async function continueGithubScan(args: {
+  owner: string;
+  repo: string;
+  target: string;
+  api: ReturnType<typeof makeClient>;
+  meta: GithubMeta;
+  health: HealthTracker;
+  coverage: Coverage;
+  signals: Signal[];
+}): Promise<AnalysisResult> {
+  const { owner, repo, target, api, meta, health, coverage } = args;
+  const signals = args.signals;
+  if (!useConnectorNoteAdded(coverage) && !process.env.GITHUB_API_KEY) {
+    coverage.notes.push("No GitHub connector configured — scanned via the public GitHub API.");
+  }
   coverage.sourcesRead += 1;
 
   const branch = meta.default_branch ?? "main";
