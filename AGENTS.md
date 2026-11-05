@@ -10,3 +10,5 @@
 > the editor, so keep the branch in a working state.
 
 <!-- LOVABLE:END -->
+
+- Keep AI Gateway calls in server-side `*.functions.ts` modules so credentials and prompts never enter browser code.
