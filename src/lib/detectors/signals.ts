@@ -18,6 +18,7 @@ export interface ScoreConfidence {
 }
 
 import type { ScanHealth } from "./health";
+import type { GithubAccess } from "./github-access";
 
 export interface AnalysisResult {
   target: string;
@@ -28,6 +29,7 @@ export interface AnalysisResult {
   signals: Signal[];
   coverage?: { sourcesRead: number; sourcesAttempted: number; notes: string[] };
   health?: ScanHealth;
+  githubAccess?: GithubAccess;
   meta?: { description?: string | null; stars?: number; branch?: string };
   error?: string;
 }
