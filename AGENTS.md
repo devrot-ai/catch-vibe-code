@@ -12,3 +12,4 @@
 <!-- LOVABLE:END -->
 
 - Keep AI Gateway calls in server-side `*.functions.ts` modules so credentials and prompts never enter browser code.
+- Keep AI explanations separate from deterministic scan scores, and ground them only in validated scan evidence or retry events.
