@@ -8,6 +8,9 @@ import type { AnalysisResult, Signal } from "../lib/detectors/signals";
 import type { ScanHealth } from "../lib/detectors/health";
 import { CompareView } from "../components/compare-view";
 import { encodeCompare } from "../lib/share-link";
+import { explainScan } from "../lib/ai-analysis.functions";
+import { Button } from "../components/ui/button";
+import { Sparkles } from "lucide-react";
 
 const searchSchema = z.object({ url: z.string().min(1).optional() });
 
@@ -166,8 +169,12 @@ function ScanPage() {
   const navigate = useNavigate();
   const [urlInput, setUrlInput] = useState(urlParam ?? "");
   const analyze = useServerFn(analyzeUrl);
+  const explain = useServerFn(explainScan);
   const [baseline, setBaseline] = useState<AnalysisResult | null>(null);
   const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
+  const [aiExplanation, setAiExplanation] = useState("");
+  const [aiExplanationError, setAiExplanationError] = useState("");
+  const [isExplaining, setIsExplaining] = useState(false);
 
   if (!urlParam) {
     return (
@@ -219,7 +226,34 @@ function ScanPage() {
   const rescan = async () => {
     if (data && !data.error) setBaseline(data);
     setShareState("idle");
+    setAiExplanation("");
+    setAiExplanationError("");
     await refetch();
+  };
+
+  const explainResults = async (result: AnalysisResult) => {
+    setIsExplaining(true);
+    setAiExplanationError("");
+    const response = await explain({
+      data: {
+        target: result.target,
+        kind: result.kind,
+        vibeScore: result.vibeScore,
+        aiScore: result.aiScore,
+        confidence: result.confidence,
+        signals: result.signals.map(({ category, label, weight, evidence, sourceRef }) => ({
+          category,
+          label,
+          weight,
+          evidence,
+          sourceRef,
+        })),
+        coverage: result.coverage,
+      },
+    });
+    if ("explanation" in response) setAiExplanation(response.explanation);
+    else setAiExplanationError(response.error);
+    setIsExplaining(false);
   };
 
   const shareComparison = async () => {
@@ -302,6 +336,14 @@ function ScanPage() {
                   {data.error}
                 </div>
                 {data.health && <HealthBanner health={data.health} />}
+                {data.kind === "github" && data.githubAccess && (
+                  <div className={`mt-3 rounded-md border px-4 py-3 text-sm ${data.githubAccess.mode === "anonymous" ? "border-amber-500/30 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "border-emerald-500/25 bg-emerald-500/5 text-emerald-800 dark:text-emerald-200"}`}>
+                    <div className="font-medium">
+                      GitHub access: {data.githubAccess.mode === "authenticated" ? "Authenticated" : "Anonymous"}
+                    </div>
+                    {data.githubAccess.warning && <p className="mt-1 text-xs">{data.githubAccess.warning}</p>}
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -357,6 +399,21 @@ function ScanPage() {
                     )}
                   </div>
                 )}
+
+                <section className="mt-6 border-y border-border py-5" aria-labelledby="ai-explanation-title">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 id="ai-explanation-title" className="text-lg font-semibold">Plain-language explanation</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">An AI summary grounded in the signals above; it does not change the scores.</p>
+                    </div>
+                    <Button type="button" variant="outline" onClick={() => void explainResults(data)} disabled={isExplaining}>
+                      <Sparkles aria-hidden="true" />
+                      {isExplaining ? "Explaining…" : aiExplanation ? "Refresh explanation" : "Explain these scores"}
+                    </Button>
+                  </div>
+                  {aiExplanationError && <p role="alert" className="mt-4 text-sm text-destructive">{aiExplanationError}</p>}
+                  {aiExplanation && <div className="prose prose-sm dark:prose-invert mt-4 max-w-none whitespace-pre-wrap text-sm leading-6">{aiExplanation}</div>}
+                </section>
 
                 <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <Breakdown title="Vibe evidence" score={data.vibeScore} signals={vibeSignals} />

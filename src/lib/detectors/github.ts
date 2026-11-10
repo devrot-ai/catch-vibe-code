@@ -25,6 +25,7 @@ import {
   type RetryConfig,
   type RetryRunnerOptions,
 } from "./retry";
+import { githubAccessStatus, type GithubAccess } from "./github-access";
 
 
 const GATEWAY = "https://connector-gateway.lovable.dev/github";
@@ -56,7 +57,12 @@ export function parseGithubUrl(url: string): { owner: string; repo: string } | n
   }
 }
 
-function failure(target: string, error: string, health?: ScanHealth): AnalysisResult {
+function failure(
+  target: string,
+  error: string,
+  health?: ScanHealth,
+  githubAccess?: GithubAccess,
+): AnalysisResult {
   const coverage = emptyCoverage();
   return {
     target,
@@ -67,6 +73,7 @@ function failure(target: string, error: string, health?: ScanHealth): AnalysisRe
     signals: [],
     coverage,
     ...(health ? { health } : {}),
+    ...(githubAccess ? { githubAccess } : {}),
     error,
   };
 }
@@ -237,6 +244,7 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   const signals: Signal[] = [];
 
   const useConnector = Boolean(apiKey && connKey);
+  let githubAccess = githubAccessStatus(useConnector);
   let api = useConnector
     ? makeClient(apiKey as string, connKey as string, health)
     : makePublicClient(health);
@@ -257,10 +265,22 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
   // Connector credentials invalid/expired (or absent): fall back to the public
   // GitHub API so public repositories still scan. Private repos keep failing.
   if (!meta && useConnector) {
+    githubAccess = githubAccessStatus(true, true);
     coverage.notes.push("GitHub connector unavailable — scanned via the public GitHub API instead.");
     api = makePublicClient(health);
     const publicMeta = await api.json<GithubMeta>(`/repos/${owner}/${repo}`);
-    if (publicMeta) return continueGithubScan({ owner, repo, target, api, meta: publicMeta, health, coverage, signals });
+    if (publicMeta)
+      return continueGithubScan({
+        owner,
+        repo,
+        target,
+        api,
+        meta: publicMeta,
+        health,
+        coverage,
+        signals,
+        githubAccess,
+      });
   }
 
   if (!meta)
@@ -268,9 +288,10 @@ export async function analyzeGithub(owner: string, repo: string): Promise<Analys
       target,
       "Could not fetch repository (private, not found, or rate-limited).",
       computeHealth(health),
+      githubAccess,
     );
 
-  return continueGithubScan({ owner, repo, target, api, meta, health, coverage, signals });
+  return continueGithubScan({ owner, repo, target, api, meta, health, coverage, signals, githubAccess });
 }
 
 /**
@@ -302,8 +323,9 @@ async function continueGithubScan(args: {
   health: HealthTracker;
   coverage: Coverage;
   signals: Signal[];
+  githubAccess: GithubAccess;
 }): Promise<AnalysisResult> {
-  const { owner, repo, target, api, meta, health, coverage } = args;
+  const { owner, repo, target, api, meta, health, coverage, githubAccess } = args;
   const signals = args.signals;
   coverage.sourcesRead += 1;
 
@@ -688,6 +710,7 @@ async function continueGithubScan(args: {
     signals,
     coverage,
     health: computeHealth(health),
+    githubAccess,
     meta: { description: meta.description, stars: meta.stargazers_count, branch },
   };
 }
