@@ -236,26 +236,31 @@ function ScanPage() {
   const explainResults = async (result: AnalysisResult) => {
     setIsExplaining(true);
     setAiExplanationError("");
-    const response = await explain({
-      data: {
-        target: result.target,
-        kind: result.kind,
-        vibeScore: result.vibeScore,
-        aiScore: result.aiScore,
-        confidence: result.confidence,
-        signals: result.signals.map(({ category, label, weight, evidence, sourceRef }) => ({
-          category,
-          label,
-          weight,
-          evidence,
-          sourceRef,
-        })),
-        coverage: result.coverage,
-      },
-    });
-    if ("explanation" in response) setAiExplanation(response.explanation);
-    else setAiExplanationError(response.error);
-    setIsExplaining(false);
+    try {
+      const response = await explain({
+        data: {
+          target: result.target,
+          kind: result.kind,
+          vibeScore: result.vibeScore,
+          aiScore: result.aiScore,
+          confidence: result.confidence,
+          signals: result.signals.map(({ category, label, weight, evidence, sourceRef }) => ({
+            category,
+            label,
+            weight,
+            evidence,
+            sourceRef,
+          })),
+          coverage: result.coverage,
+        },
+      });
+      if ("explanation" in response) setAiExplanation(response.explanation);
+      else setAiExplanationError(response.error);
+    } catch {
+      setAiExplanationError("The explanation could not be generated. Your scan data is unchanged; try again shortly.");
+    } finally {
+      setIsExplaining(false);
+    }
   };
 
   const shareComparison = async () => {
