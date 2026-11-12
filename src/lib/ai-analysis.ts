@@ -78,6 +78,9 @@ export function parseRetryTimeline(rawText: string): RetryTimelineSummary {
   if (Array.isArray(parsed)) {
     source = parsed;
   } else if (isRecord(parsed)) {
+    if (parsed.schemaVersion !== undefined && parsed.schemaVersion !== 2) {
+      throw new Error("This report version isn’t supported. Paste a version 2 report or a retry event array.");
+    }
     const candidates = [parsed.retryTimeline, parsed.retryLog];
     const throttling = isRecord(parsed.throttling) ? parsed.throttling : null;
     if (throttling) candidates.push(throttling.events);

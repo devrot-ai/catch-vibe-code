@@ -49,6 +49,7 @@ async function writeScanReport(result, failure) {
         }
       : null,
     health: result?.health ?? null,
+    githubAccess: result?.githubAccess ?? null,
     // Throttling/retry stats for the run, so flaky CI runs can be diagnosed
     // without reproducing the scan locally.
     throttling: result?.health?.throttling ?? null,
@@ -114,6 +115,7 @@ async function writeThrottlingSummary(result) {
         durationMs: health?.durationMs ?? 0,
         requests: health?.requests ?? null,
         throttling: health?.throttling ?? null,
+        githubAccess: result?.githubAccess ?? null,
         retryLog: health?.throttling?.events ?? [],
         retryTimeline: health?.throttling?.events ?? [],
       },
@@ -148,6 +150,8 @@ function assertRetryLog(result) {
 function assertScanResult(result) {
   assert.equal(result.error, undefined, `scan failed: ${result.error}`);
   assert.equal(result.kind, "github");
+  assert.ok(result.githubAccess, "expected explicit GitHub access status");
+  assert.ok(["authenticated", "anonymous"].includes(result.githubAccess.mode));
   assert.equal(result.target, "github.com/shadcn-ui/ui");
 
   // --- health banner -----------------------------------------------------

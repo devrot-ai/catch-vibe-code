@@ -45,6 +45,7 @@ test("retry timeline parser rejects malformed and inconsistent reports", () => {
   assert.throws(() => parseRetryTimeline("not json"), /valid JSON/);
   assert.throws(() => parseRetryTimeline(JSON.stringify([{ ...retryEvent, waitMs: -1 }])), /valid event fields/);
   assert.throws(() => parseRetryTimeline(JSON.stringify({ retryTimeline: [], retryLog: [retryEvent] })), /don’t match/);
+  assert.throws(() => parseRetryTimeline(JSON.stringify({ schemaVersion: 1, retryTimeline: [retryEvent] })), /version isn’t supported/);
   assert.throws(() => parseRetryTimeline(JSON.stringify([{ ...retryEvent, completedAt: "invalid" }])), /valid timestamps/);
 });
 

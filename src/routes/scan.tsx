@@ -22,6 +22,8 @@ export const Route = createFileRoute("/scan")({
       { name: "description", content: "Heuristic Vibe and AI scores with evidence." },
       { property: "og:title", content: "Scan results — Vibe & AI Detector" },
       { property: "og:description", content: "Heuristic Vibe and AI scores with evidence." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       { name: "robots", content: "noindex" },
     ],
   }),
