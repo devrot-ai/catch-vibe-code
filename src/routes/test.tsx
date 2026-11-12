@@ -28,6 +28,8 @@ export const Route = createFileRoute("/test")({
       },
       { property: "og:title", content: "Test mode — Vibe & AI Detector" },
       { property: "og:description", content: "Regression harness for Vibe and AI heuristics." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       { name: "robots", content: "noindex" },
     ],
   }),

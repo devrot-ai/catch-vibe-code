@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CompareRouteImport } from './routes/compare'
+import { Route as RetryAnalysisRouteImport } from './routes/retry-analysis'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as TestRouteImport } from './routes/test'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const CompareRoute = CompareRouteImport.update({
   id: '/compare',
   path: '/compare',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RetryAnalysisRoute = RetryAnalysisRouteImport.update({
+  id: '/retry-analysis',
+  path: '/retry-analysis',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScanRoute = ScanRouteImport.update({
@@ -38,12 +44,14 @@ const TestRoute = TestRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/compare': typeof CompareRoute
+  '/retry-analysis': typeof RetryAnalysisRoute
   '/scan': typeof ScanRoute
   '/test': typeof TestRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/compare': typeof CompareRoute
+  '/retry-analysis': typeof RetryAnalysisRoute
   '/scan': typeof ScanRoute
   '/test': typeof TestRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/compare': typeof CompareRoute
+  '/retry-analysis': typeof RetryAnalysisRoute
   '/scan': typeof ScanRoute
   '/test': typeof TestRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/compare' | '/scan' | '/test'
+  fullPaths: '/' | '/compare' | '/retry-analysis' | '/scan' | '/test'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/compare' | '/scan' | '/test'
-  id: '__root__' | '/' | '/compare' | '/scan' | '/test'
+  to: '/' | '/compare' | '/retry-analysis' | '/scan' | '/test'
+  id: '__root__' | '/' | '/compare' | '/retry-analysis' | '/scan' | '/test'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CompareRoute: typeof CompareRoute
+  RetryAnalysisRoute: typeof RetryAnalysisRoute
   ScanRoute: typeof ScanRoute
   TestRoute: typeof TestRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/compare'
       fullPath: '/compare'
       preLoaderRoute: typeof CompareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/retry-analysis': {
+      id: '/retry-analysis'
+      path: '/retry-analysis'
+      fullPath: '/retry-analysis'
+      preLoaderRoute: typeof RetryAnalysisRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scan': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CompareRoute: CompareRoute,
+  RetryAnalysisRoute: RetryAnalysisRoute,
   ScanRoute: ScanRoute,
   TestRoute: TestRoute,
 }

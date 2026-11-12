@@ -15,6 +15,8 @@ export const Route = createFileRoute("/")({
         property: "og:description",
         content: "Heuristic scores for AI-assisted and vibe-coded projects.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Home,
@@ -70,6 +72,12 @@ function Home() {
           className="mt-6 text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
         >
           Run test mode →
+        </Link>
+        <Link
+          to="/retry-analysis"
+          className="mt-3 text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        >
+          Analyze a retry timeline →
         </Link>
 
         <div className="mt-16 grid w-full max-w-2xl grid-cols-1 gap-6 sm:grid-cols-2">
