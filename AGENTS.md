@@ -13,3 +13,4 @@
 
 - Keep AI Gateway calls in server-side `*.functions.ts` modules so credentials and prompts never enter browser code.
 - Keep AI explanations separate from deterministic scan scores, and ground them only in validated scan evidence or retry events.
+- Store GitHub access provenance as a typed scan-result field, not coverage prose, so UI labels reflect the client that returned repository metadata.

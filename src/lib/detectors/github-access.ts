@@ -14,7 +14,7 @@ export function githubAccessStatus(
   return {
     mode: "anonymous",
     warning: connectorFailed
-      ? "Authenticated GitHub access failed, so this scan used anonymous access. GitHub’s lower anonymous rate limits may leave some evidence unavailable."
+      ? "The connected GitHub request did not return repository data, so this scan continued anonymously. GitHub’s lower anonymous rate limits may leave some evidence unavailable."
       : "This scan used anonymous GitHub access. GitHub’s lower anonymous rate limits may leave some evidence unavailable.",
   };
 }

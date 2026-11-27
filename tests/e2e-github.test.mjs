@@ -115,7 +115,6 @@ async function writeThrottlingSummary(result) {
         durationMs: health?.durationMs ?? 0,
         requests: health?.requests ?? null,
         throttling: health?.throttling ?? null,
-        githubAccess: result?.githubAccess ?? null,
         retryLog: health?.throttling?.events ?? [],
         retryTimeline: health?.throttling?.events ?? [],
       },

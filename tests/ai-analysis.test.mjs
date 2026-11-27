@@ -25,7 +25,7 @@ test("GitHub scan access status distinguishes authenticated and anonymous result
   assert.deepEqual(githubAccessStatus(true), { mode: "authenticated" });
   assert.equal(githubAccessStatus(false).mode, "anonymous");
   assert.match(githubAccessStatus(false).warning, /lower anonymous rate limits/);
-  assert.match(githubAccessStatus(true, true).warning, /Authenticated GitHub access failed/);
+  assert.match(githubAccessStatus(true, true).warning, /continued anonymously/);
 });
 
 test("retry timeline parser accepts a report and summarizes its sequence", () => {

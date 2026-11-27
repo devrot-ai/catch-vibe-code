@@ -11,6 +11,7 @@ import { encodeCompare } from "../lib/share-link";
 import { explainScan } from "../lib/ai-analysis.functions";
 import { Button } from "../components/ui/button";
 import { Sparkles } from "lucide-react";
+import type { GithubAccess } from "../lib/detectors/github-access";
 
 const searchSchema = z.object({ url: z.string().min(1).optional() });
 
@@ -159,6 +160,15 @@ function HealthBanner({ health }: { health: ScanHealth }) {
         </span>
       </div>
       <p className="mt-1 text-xs">{health.detail}</p>
+    </div>
+  );
+}
+
+function GithubAccessBanner({ access }: { access: GithubAccess }) {
+  return (
+    <div className={`mt-3 rounded-md border px-4 py-3 text-sm ${access.mode === "anonymous" ? "border-amber-500/30 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "border-emerald-500/25 bg-emerald-500/5 text-emerald-800 dark:text-emerald-200"}`}>
+      <div className="font-medium">GitHub access: {access.mode === "authenticated" ? "Authenticated" : "Anonymous"}</div>
+      {access.warning && <p className="mt-1 text-xs">{access.warning}</p>}
     </div>
   );
 }
@@ -343,18 +353,12 @@ function ScanPage() {
                   {data.error}
                 </div>
                 {data.health && <HealthBanner health={data.health} />}
-                {data.kind === "github" && data.githubAccess && (
-                  <div className={`mt-3 rounded-md border px-4 py-3 text-sm ${data.githubAccess.mode === "anonymous" ? "border-amber-500/30 bg-amber-500/5 text-amber-800 dark:text-amber-200" : "border-emerald-500/25 bg-emerald-500/5 text-emerald-800 dark:text-emerald-200"}`}>
-                    <div className="font-medium">
-                      GitHub access: {data.githubAccess.mode === "authenticated" ? "Authenticated" : "Anonymous"}
-                    </div>
-                    {data.githubAccess.warning && <p className="mt-1 text-xs">{data.githubAccess.warning}</p>}
-                  </div>
-                )}
+                {data.kind === "github" && data.githubAccess && <GithubAccessBanner access={data.githubAccess} />}
               </>
             ) : (
               <>
                 {data.health && <HealthBanner health={data.health} />}
+                {data.kind === "github" && data.githubAccess && <GithubAccessBanner access={data.githubAccess} />}
                 <div className="mt-4 grid grid-cols-1 gap-8 rounded-xl border border-border bg-card p-8 sm:grid-cols-2">
                   <Gauge
                     score={data.vibeScore}
